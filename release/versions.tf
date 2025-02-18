@@ -1,18 +1,17 @@
-variable "prefix" {
-  description = "Prefix for resource names"
-  type        = string
-}
-variable "Region" {
-  description = "AWS region for resource deployment"
-  type        = string
-}
-
-variable "EnvTag" {
-  description = "Environment identifier for resource tagging (e.g., dev, prod)"
-  type        = string
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.38.0"
+    }
+  }
 }
 
-variable "SolTag" {
-  description = "Solution identifier for resource grouping and tagging"
-  type        = string
+# Use Amazon S3 for Terraform backend
+terraform {  
+  backend "s3" {  
+    key          = "terraform/statefile.tfstate"
+    encrypt      = true
+    use_lockfile = true  #S3 native locking
+  }
 }
