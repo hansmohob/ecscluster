@@ -3,6 +3,30 @@ resource "aws_s3_bucket" "website" {
   bucket_prefix = "${var.PrefixCode}-website-"
 }
 
+resource "aws_s3_bucket_policy" "website" {
+  bucket = aws_s3_bucket.website.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowCloudFrontAccess"
+        Effect    = "Allow"
+        Principal = {
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action   = "s3:GetObject"
+        Resource = "${aws_s3_bucket.website.arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.website.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
 # Enable website hosting
 resource "aws_s3_bucket_website_configuration" "website" {
   bucket = aws_s3_bucket.website.id
@@ -33,7 +57,7 @@ resource "aws_cloudfront_distribution" "website" {
   enabled = true
   
   origin {
-    domain_name = aws_s3_bucket.website.bucket_regional_domain_name
+    domain_name = aws_s3_bucket_website_configuration.website.website_endpoint
     origin_id   = "S3Origin"
 
     custom_origin_config {
