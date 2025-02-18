@@ -1,10 +1,6 @@
-provider "aws" {
-  region = "eu-west-2"
-}
-
 # S3 bucket for website hosting
 resource "aws_s3_bucket" "website" {
-  bucket_prefix = "demo-website-"
+  bucket_prefix = "${var.PrefixCode}-website-"
 }
 
 # Enable website hosting
@@ -24,7 +20,7 @@ resource "aws_s3_object" "index" {
 <html>
 <body>
 <h1>Hello from Terraform!</h1>
-<p>If you see this, your pipeline is working!</p>
+<p>If you see this, your pipeline is working.</p>
 <p>Deployed at: ${timestamp()}</p>
 </body>
 </html>
@@ -71,8 +67,4 @@ resource "aws_cloudfront_distribution" "website" {
   viewer_certificate {
     cloudfront_default_certificate = true
   }
-}
-
-output "website_url" {
-  value = aws_cloudfront_distribution.website.domain_name
 }

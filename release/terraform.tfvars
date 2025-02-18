@@ -1,0 +1,2 @@
+EnvTag = "dev"
+SolTag = "demoweb"
