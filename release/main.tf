@@ -3,6 +3,15 @@ resource "aws_s3_bucket" "website" {
   bucket_prefix = "${var.PrefixCode}-website-"
 }
 
+# Create Origin Access Control
+resource "aws_cloudfront_origin_access_control" "website" {
+  name                              = "${var.PrefixCode}-oac"
+  description                       = "Origin Access Control for static website"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
 resource "aws_s3_bucket_policy" "website" {
   bucket = aws_s3_bucket.website.id
 
@@ -27,15 +36,6 @@ resource "aws_s3_bucket_policy" "website" {
   })
 }
 
-# Enable website hosting
-resource "aws_s3_bucket_website_configuration" "website" {
-  bucket = aws_s3_bucket.website.id
-
-  index_document {
-    suffix = "index.html"
-  }
-}
-
 # Upload index.html
 resource "aws_s3_object" "index" {
   bucket = aws_s3_bucket.website.id
@@ -57,15 +57,9 @@ resource "aws_cloudfront_distribution" "website" {
   enabled = true
   
   origin {
-    domain_name = aws_s3_bucket_website_configuration.website.website_endpoint
-    origin_id   = "S3Origin"
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "http-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
+    domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
+    origin_id               = "S3Origin"
+    origin_access_control_id = aws_cloudfront_origin_access_control.website.id
   }
 
   default_cache_behavior {
