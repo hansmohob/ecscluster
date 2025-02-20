@@ -54,7 +54,8 @@ EOF
 
 # CloudFront distribution
 resource "aws_cloudfront_distribution" "website" {
-  enabled = true
+  enabled             = true
+  default_root_object = "index.html"
   
   origin {
     domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
