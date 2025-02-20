@@ -1,0 +1,1457 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Browser-based development environment with VS Code, S3-backed git storage, and secure CloudFront access
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Networking
+        Parameters:
+          - VpcCidr
+      - Label:
+          default: Deployment Settings
+        Parameters:
+          - CodeServerVersion
+          - GitHubRepo
+          - DeployPipeline
+      - Label:
+          default: Compute settings
+        Parameters:
+          - AMICodeServer
+      - Label:
+          default: Tagging and Naming
+        Parameters:
+          - PrefixCode
+          - SolutionTag
+          - EnvironmentTag
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: 10.180
+    Description:  Network addressing prefix (first two octets) for VPC and subnet CIDR blocks, e.g., '10.180'
+  GitHubRepo:
+    Type: String
+    Default: https://github.com/hansmohob/ecscluster.git
+    Description: Source GitHub repository URL containing initial content to be cloned into code-server workspace
+  DeployPipeline:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+    Description: Deploy sample CodeBuild Pipeline to build Amazon ECS cluster using Terraform
+  CodeServerVersion:
+    Type: String
+    Default: 4.96.4
+    Description: Version of code-server to install. See available versions at github.com/coder/code-server/releases
+  AMICodeServer:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: SSM parameter path for latest Amazon Linux 2023 AMI in current region
+  PrefixCode:
+    Type: String
+    Default: prw
+    Description: Resource naming prefix for uniqueness and organization. Must be lowercase alphanumeric and cannot start with 'aws'
+  EnvironmentTag:
+    Type: String
+    Default: production
+    Description: Environment identifier for resource tagging (e.g., dev, prod)
+  SolutionTag:
+    Type: String
+    Default: SecureDeveloperEnvironment
+    Description: Solution identifier for resource tagging and grouping. Use alphanumeric characters only
+
+### Region to CloudFront Prefix List mapping - delete regions not required for deployment
+### To get prefix list for your region: aws ec2 describe-managed-prefix-lists --filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing
+Mappings:
+  RegionMap:
+    ap-northeast-1:
+      CloudFrontPrefixList: pl-58a04531
+    ap-northeast-2:
+      CloudFrontPrefixList: pl-22a6434b
+    ap-northeast-3:
+      CloudFrontPrefixList: pl-31a14458
+    ap-south-1:
+      CloudFrontPrefixList: pl-9aa247f3
+    ap-southeast-1:
+      CloudFrontPrefixList: pl-31a34658
+    ap-southeast-2:
+      CloudFrontPrefixList: pl-b8a742d1
+    ca-central-1:
+      CloudFrontPrefixList: pl-38a64351
+    eu-central-1:
+      CloudFrontPrefixList: pl-a3a144ca
+    eu-north-1:
+      CloudFrontPrefixList: pl-fab65393
+    eu-west-1:
+      CloudFrontPrefixList: pl-4fa04526
+    eu-west-2:
+      CloudFrontPrefixList: pl-93a247fa
+    eu-west-3:
+      CloudFrontPrefixList: pl-75b1541c
+    sa-east-1:
+      CloudFrontPrefixList: pl-5da64334
+    us-east-1:
+      CloudFrontPrefixList: pl-3b927c52
+    us-east-2:
+      CloudFrontPrefixList: pl-b6a144df
+    us-west-1:
+      CloudFrontPrefixList: pl-4ea04527
+    us-west-2:
+      CloudFrontPrefixList: pl-82a045eb
+
+Conditions:
+  CreatePipeline: !Equals [!Ref DeployPipeline, "true"]
+
+Resources:
+
+  ### Resource Group - Groups all AWS resources for easy management and tracking
+  resourcegroup:
+    Type: AWS::ResourceGroups::Group
+    Properties:
+      Description: Secure Development Environment Resources
+      Name: !Sub ${PrefixCode}-resources
+      ResourceQuery:
+        Type: TAG_FILTERS_1_0
+        Query:
+          ResourceTypeFilters:
+            - AWS::AllSupported
+          TagFilters:
+            - Key: solution
+              Values:
+                - !Sub ${SolutionTag}
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-resources
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: resourcetype
+          Value: management
+
+  ### KMS - Central encryption key for CloudWatch Logs, Secrets Manager, and other AWS services
+  kmskey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: Shared encryption key for AWS services
+      PendingWindowInDays: 7
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            # https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:root
+            Action:
+              - kms:*
+            Resource: "*"
+          - Sid: Enable Cloudwatch access to KMS Key
+            # https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html
+            Effect: Allow
+            Principal:
+              Service: !Sub logs.${AWS::Region}.amazonaws.com
+            Action:
+              - kms:Encrypt*
+              - kms:Decrypt*
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:Describe*
+            Resource: "*"
+            Condition:
+              ArnLike:
+                "kms:EncryptionContext:aws:logs:arn": !Sub "arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:*"
+      Tags:
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: resourcetype
+          Value: security
+  kmskeyalias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/${PrefixCode}-kms-cmk
+      TargetKeyId: !Ref kmskey
+
+  ### Network Infrastructure - VPC with public/private subnets and flow logs for secure environment
+  vpc01:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub ${VpcCidr}.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      InstanceTenancy: default
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-vpc01
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+        - Key: resourcetype
+          Value: network
+  iamrolevpcflowlogs:
+    Type: AWS::IAM::Role
+    # https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-cwl.html
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-vpcflowlogs
+      Description: Publish flow logs to CloudWatch Logs
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: vpc-flow-logs.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-VpcFlowLogsPermissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:logs:*:*:*
+                Condition:
+                  StringEquals:
+                    "aws:SourceAccount": !Sub "${AWS::AccountId}"
+                  ArnLike:
+                    "aws:SourceArn": !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*"
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-vpcflowlogs
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  vpcloggroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      KmsKeyId: !GetAtt kmskey.Arn
+      LogGroupName: !Sub /aws/events/${PrefixCode}-vpcflowlog
+      RetentionInDays: 30
+  vpcflowlog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt iamrolevpcflowlogs.Arn
+      LogGroupName: !Ref vpcloggroup
+      ResourceId: !Ref vpc01
+      ResourceType: VPC
+      TrafficType: ALL
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-vpcflowlog
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: monitoring
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  internetgateway01:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-internetgateway01
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  internetgateway01attach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref vpc01
+      InternetGatewayId: !Ref internetgateway01
+  subnetpublic01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Sub ${VpcCidr}.1.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-public01-AvailabilityZone01
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  # Second public subnet required for ALB
+  subnetpublic02:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: !Sub ${VpcCidr}.2.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-public02-AvailabilityZone02
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  subnetprivate01:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc01
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: !Sub ${VpcCidr}.3.0/24
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-subnet-private01-AvailabilityZone01
+        - Key: provisioner 
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  elasticip01:
+    Type: AWS::EC2::EIP
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-eip-AvailabilityZone01
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  natgateway01:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt   elasticip01.AllocationId
+      SubnetId: !Ref subnetpublic01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-nat-public01-AvailabilityZone01
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+    DependsOn: internetgateway01
+  routetablepublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-routetable-public
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  routepublic:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref routetablepublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !GetAtt internetgateway01.InternetGatewayId
+  routeassociationpublic01:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnetpublic01
+      RouteTableId: !Ref routetablepublic
+  routeassociationpublic02:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnetpublic02
+      RouteTableId: !Ref routetablepublic
+  routetableprivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-routetable-private1-AvailabilityZone1
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  routeprivate:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref routetableprivate
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !GetAtt natgateway01.NatGatewayId
+  routeassociationprivate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnetprivate01
+      RouteTableId: !Ref routetableprivate
+
+  ### Access Layer - ALB and CloudFront distribution with optional WAF for secure access to code-server
+  albcodeserver:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${PrefixCode}-alb-codeserver
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref subnetpublic01
+        - !Ref subnetpublic02
+      SecurityGroups:
+        - !Ref securitygroupalb
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-alb-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  albtargetgroupcodeserver:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckPath: /
+      HealthCheckPort: '8080'
+      Name: !Sub ${PrefixCode}-tg-codeserver
+      Port: 8080
+      Protocol: HTTP
+      TargetType: instance
+      Targets:
+        - Id: !Ref ec2codeserver
+      VpcId: !Ref vpc01
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-targetgroup-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  # ALB listener default rule blocks all traffic unless coming from CloudFront with correct secret header
+  alblistenercodeserver:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: fixed-response
+          FixedResponseConfig:
+            ContentType: text/plain
+            MessageBody: "Access Denied"
+            StatusCode: '403'
+      LoadBalancerArn: !Ref albcodeserver
+      Port: 80
+      Protocol: HTTP
+  # Allow traffic only if secret header from CloudFront is present
+  alblistenerrulecodeserver:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref albtargetgroupcodeserver
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderName}}'
+            Values:
+              - !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderValue}}'
+      ListenerArn: !Ref alblistenercodeserver
+      Priority: 1
+  # Security group allows traffic only from CloudFront IP ranges
+  securitygroupalb:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-alb
+      GroupDescription: ALB security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: HTTP inbound from CloudFront
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourcePrefixListId: !FindInMap [RegionMap, !Ref 'AWS::Region', CloudFrontPrefixList]
+      SecurityGroupEgress:
+        - Description: Allow to EC2
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          DestinationSecurityGroupId: !Ref securitygroupcodeserver
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-alb
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  cloudfrontcachepolcodeserver:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Comment: Cache policy for VS code-server allows caching with cookie/header/query string forwarding
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 1
+        Name: !Sub ${PrefixCode}-cloudfront-policy
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: all
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers:
+              - Host
+              - Origin
+              - Authorization
+          QueryStringsConfig:
+            QueryStringBehavior: all
+  # CloudFront distribution adds secret header to all requests to ALB
+  cloudfrontdistributioncodeserver:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Origins:
+          - DomainName: !GetAtt albcodeserver.DNSName
+            Id: CodeServerOrigin
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+            # Add secret header to all requests to prevent direct ALB access
+            OriginCustomHeaders:
+              - HeaderName: !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderName}}'
+                HeaderValue: !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderValue}}'
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+            - PUT
+            - PATCH
+            - POST
+            - DELETE
+          CachePolicyId: !Ref cloudfrontcachepolcodeserver
+          OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # Managed AllViewer Policy
+          TargetOriginId: CodeServerOrigin
+          ViewerProtocolPolicy: redirect-to-https
+  cloudfrontsecretheadercodeserver:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${PrefixCode}-secret-cloudfrontheader
+      Description: Origin verification header for code-server CloudFront distribution
+      KmsKeyId: !GetAtt kmskey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"HeaderName": "X-Origin-Verify"}'
+        GenerateStringKey: "HeaderValue"
+        PasswordLength: 32
+        ExcludeCharacters: '\[]{}>|*&!%#`@,."$:+=-~^()'''
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-cloudfrontheader
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  securitygroupcodeserver:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${PrefixCode}-securitygroup-codeserver
+      GroupDescription: code-server security group
+      VpcId: !Ref vpc01
+      SecurityGroupIngress:
+        - Description: HTTPS inbound from web tier
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Sub ${VpcCidr}.0.0/16
+      SecurityGroupEgress:
+        - Description: allow all traffic outbound
+          IpProtocol: "-1"
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-securitygroup-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+
+  ### Authentication - Secrets Manager storing credentials for code-server access and CloudFront origin verification
+  secretcodeserver:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${PrefixCode}-secret-codeserver
+      Description: code-server password
+      KmsKeyId: !GetAtt kmskey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '\[]{}>|*&!%#`@,."$:+=-~^()'''
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+
+  ### Source Control Storage - S3 bucket configured as a git remote for version control, acting as a serverless git repository with encryption and access controls
+  s3bucketgit:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      # Required for pipeline build
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      Tags:
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: storage
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  s3bucketpolicygit:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref s3bucketgit
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: EnforceSecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+
+  ### Development Environment - EC2 instance running code-server with developer tools and git integration
+  iamrolecodeserver:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-codeserver
+      Description: Code-server EC2 Instance Profile
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                Resource:
+                  - '*'
+        # https://docs.aws.amazon.com/systems-manager/latest/userguide/security_iam_service-with-iam.html
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-systemsmanager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - ssm:StartSession
+                Resource:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-StartPortForwardingSession
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-cloudwatch
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ec2/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-kms
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                Resource:
+                  - !GetAtt kmskey.Arn
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-secretsmanager
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Ref secretcodeserver
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-s3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}/*
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  iaminstanceprofile01:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${PrefixCode}-iamprofile-ec2admin
+      Roles:
+        - !Ref iamrolecodeserver
+  # EC2 keypair is automatically stored in AWS Systems Manager Parameter Store
+  ec2keypaircodeserver:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub ${PrefixCode}-ec2-keypair
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-ec2-keypair
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  ec2codeserver:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AMICodeServer
+      InstanceType: t3a.xlarge
+      KeyName: !Ref ec2keypaircodeserver
+      SubnetId: !Ref subnetprivate01
+      IamInstanceProfile: !Ref iaminstanceprofile01
+      Monitoring: true
+      PrivateIpAddress: !Sub ${VpcCidr}.3.100
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            # Consider setting DeleteOnTermination to false in production environments
+            DeleteOnTermination: true
+            Encrypted: true
+            KmsKeyId: alias/aws/ebs
+            VolumeSize: 100
+            VolumeType: gp3
+            Iops: 3000
+      SecurityGroupIds:
+        - !Ref securitygroupcodeserver
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+
+          echo "INFO: Waiting for SSM agent initialization..."
+          until systemctl is-active --quiet amazon-ssm-agent; do
+            echo "INFO: SSM agent is not ready..."
+            systemctl status amazon-ssm-agent
+            sleep 5
+          done
+          echo "INFO: Installing packages including CloudWatch agent"
+          dnf update -y -q
+          dnf install amazon-cloudwatch-agent -y -q
+
+          echo "INFO: Configuring CloudWatch agent..."
+          /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -s -c ssm:/AmazonCloudWatch-linux -c default
+
+          echo "INFO: Creating AWS profile for developer role..."
+          su - ec2-user -c "mkdir -p ~/.aws"
+          su - ec2-user -c "cat > ~/.aws/config << EOF
+          [profile developer]
+          role_arn = arn:aws:iam::${AWS::AccountId}:role/${PrefixCode}-iamrole-developer
+          credential_source = Ec2InstanceMetadata
+          region = ${AWS::Region}
+          EOF"
+
+          #### START: CODE-SERVER BOOTSTRAP ####
+          echo "INFO: Installing code-server version ${CodeServerVersion}..."
+          dnf install https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-amd64.rpm -y
+
+          echo "INFO: Configuring code-server"
+          mkdir -p /home/ec2-user/.config/code-server
+          mkdir -p /home/ec2-user/workspace
+          chown -R ec2-user:ec2-user /home/ec2-user/workspace
+
+          cat > /home/ec2-user/.config/code-server/config.yaml << EOF
+          bind-addr: 0.0.0.0:8080
+          auth: password
+          password: "$(aws secretsmanager get-secret-value --secret-id ${secretcodeserver} --region ${AWS::Region} --query SecretString --output text | jq -r .password)"
+          cert: false
+          EOF
+
+          chown -R ec2-user:ec2-user /home/ec2-user/.config
+
+          cat > /etc/systemd/system/code-server.service << EOF
+          [Unit]
+          Description=code-server
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=ec2-user
+          Environment=HOME=/home/ec2-user
+          WorkingDirectory=/home/ec2-user/workspace
+          ExecStart=/usr/bin/code-server --config /home/ec2-user/.config/code-server/config.yaml
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          echo "INFO: Configuring code-server workspace interface..."
+          mkdir -p /home/ec2-user/.local/share/code-server/User/
+          cat >> /home/ec2-user/.local/share/code-server/User/settings.json << EOF
+          {
+            "git.enabled": true,
+            "git.path": "/usr/bin/git",
+            "git.autofetch": true,
+            "window.menuBarVisibility": "classic",
+            "workbench.startupEditor": "none",
+            "workspace.openFilesInNewWindow": "off",
+            "workbench.colorTheme": "Default Dark+"
+          }
+          EOF
+          chown -R ec2-user:ec2-user /home/ec2-user/.local
+
+          echo "INFO: Installing extensions..."
+          su - ec2-user -c "code-server --install-extension amazonwebservices.amazon-q-vscode --force"
+          su - ec2-user -c "code-server --install-extension amazonwebservices.aws-toolkit-vscode --force"
+          su - ec2-user -c "code-server --install-extension hashicorp.terraform --force"
+          su - ec2-user -c "code-server --install-extension ms-azuretools.vscode-docker --force"
+          su - ec2-user -c "code-server --install-extension ms-kubernetes-tools.vscode-kubernetes-tools --force"
+
+          echo "INFO: Installing Terraform..."
+          dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+          dnf install -y terraform
+
+          echo "INFO: Starting code-server service..."
+          systemctl enable code-server
+          systemctl start code-server
+          #### END: CODE-SERVER BOOTSTRAP ####
+
+          #### START: GIT-REMOTE-S3 BOOTSTRAP ####
+          echo "INFO: Installing git-remote-s3..."
+          dnf install git -y -q
+          dnf install -y python3 python3-pip
+          pip3 install git-remote-s3
+
+          # Initialize git repo as ec2-user
+          echo "INFO: Configuring git..."
+          su - ec2-user -c "git config --global user.name 'EC2 User'"
+          su - ec2-user -c "git config --global user.email 'ec2-user@example.com'"
+          su - ec2-user -c "git config --global init.defaultBranch main"
+          su - ec2-user -c "cd /home/ec2-user/workspace && \
+                            git clone ${GitHubRepo} my-workspace && \
+                            cd my-workspace && \
+                            git remote remove origin && \
+                            git remote add origin s3+zip://${s3bucketgit}/my-workspace && \
+                            git push -u origin main"
+          #### END: GIT-REMOTE-S3 BOOTSTRAP ####
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-ec2-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: compute
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+
+  ### Developer role with elevated permissions used by both code-server AWS profile and CodeBuild pipeline to deploy static website hosted on Amazon S3
+  iamroledeveloper:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-developer
+      Description: Elevated permissions for AWS infrastructure deployment and resource management
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+              AWS: !GetAtt iamrolecodeserver.Arn
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-s3
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:s3:::${PrefixCode}-*
+                  - !Sub arn:${AWS::Partition}:s3:::${PrefixCode}-*/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-cloudfront
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudfront:*
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:          
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeDhcpOptions
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                  - ec2:DeleteNetworkInterface
+                  - ec2:CreateNetworkInterface
+                Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-developer
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+
+  # Policy allowing code-server user to assume the developer role
+  iamrolepolicyassumedeveloper:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${PrefixCode}-iampolicy-assumedeveloper
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Resource: !GetAtt iamroledeveloper.Arn
+      Roles:
+        - !Ref iamrolecodeserver
+
+  ### CI/CD - CodeBuild and Pipeline for automated infrastructure deployment via Terraform
+  # S3 bucket for codepipeline artifacts AND TERRAFORM STATE!
+  s3bucketartifact:
+    Type: AWS::S3::Bucket
+    Condition: CreatePipeline
+    DeletionPolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: storage
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  s3bucketpolicyartifact:
+    Type: AWS::S3::BucketPolicy
+    Condition: CreatePipeline
+    Properties:
+      Bucket: !Ref s3bucketartifact
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: EnforceSecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+  # Pipeline-specific permissions for iamroledeveloper conditional on DeployPipeline
+  iamroledeveloperpipeline:
+    Type: AWS::IAM::RolePolicy
+    Condition: CreatePipeline
+    Properties:
+      RoleName: !Ref iamroledeveloper
+      PolicyName: !Sub ${PrefixCode}-iampolicy-pipeline
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: 
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+          - Effect: Allow
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:ListBucket
+              - s3:GetBucketVersioning
+              - s3:PutObjectVersionAcl
+              - s3:GetObjectVersionAcl
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}/*
+          - Effect: Allow
+            Action: ec2:CreateNetworkInterfacePermission
+            Resource: !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*
+            Condition:
+              StringEquals:
+                ec2:AuthorizedService: codebuild.amazonaws.com
+              ArnEquals:
+                ec2:Subnet:
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${subnetprivate01}
+  # Code Pipeline deployment
+  codebuildprojectbuild:
+    Type: AWS::CodeBuild::Project
+    Condition: CreatePipeline
+    Properties:
+      Name: !Sub ${PrefixCode}-deploy
+      Description: Deploy Terraform-managed resources (automatically triggered)
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        # Only available in specific regions: https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-codebuild-project-environment.html
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !GetAtt iamroledeveloper.Arn
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                # Install Terraform latest version
+                - yum install -y yum-utils
+                - yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+                - yum -y install terraform
+                - terraform --version               
+            pre_build:
+              commands:
+                # Initialize Terraform using shared pipeline/state bucket
+                - cd release
+                - terraform init -backend-config="bucket=${s3bucketartifact}" -backend-config="region=${AWS::Region}"
+            build:
+              commands:
+                # Pass prefix to Terraform to ensure created resources match IAM permissions and naming convention
+                - terraform plan -var="PrefixCode=${PrefixCode}" -var="Region=${AWS::Region}"
+                - terraform apply -auto-approve -var="PrefixCode=${PrefixCode}" -var="Region=${AWS::Region}"
+            post_build:
+              commands:
+                - echo "Terraform apply completed on `date`"
+                - echo "Website URL -> https://$(terraform output -raw website_url)"
+      TimeoutInMinutes: 15
+      VpcConfig:
+        VpcId: !Ref vpc01
+        Subnets:
+          - !Ref subnetprivate01
+        SecurityGroupIds:
+          - !Ref securitygroupcodeserver
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-codebuildproject-terraform-build
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: devops
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  codebuildprojectdestroy:
+    Type: AWS::CodeBuild::Project
+    Condition: CreatePipeline
+    Properties:
+      Name: !Sub ${PrefixCode}-destroy
+      Description: Destroys Terraform-managed resources (manual trigger only)
+      Artifacts:
+        Type: NO_ARTIFACTS
+      Environment:
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0
+        PrivilegedMode: true
+        Type: LINUX_CONTAINER
+      ServiceRole: !GetAtt iamroledeveloper.Arn
+      Source:
+        Type: NO_SOURCE
+        BuildSpec: !Sub |
+          version: 0.2
+          phases:
+            install:
+              commands:
+                # Install Terraform latest version
+                - yum install -y yum-utils
+                - yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+                - yum -y install terraform
+                - terraform --version
+                - ls -la
+                
+            pre_build:
+              commands:
+                # Initialize Terraform using shared pipeline/state bucket
+                - cd release
+                - terraform init -backend-config="bucket=${s3bucketartifact}" -backend-config="region=${AWS::Region}"
+                
+            build:
+              commands:
+                # Pass same variables as deploy
+                - terraform destroy -auto-approve -var="PrefixCode=${PrefixCode}" -var="Region=${AWS::Region}"
+            
+            post_build:
+              commands:
+                - echo "Terraform destroy completed on `date`"
+      TimeoutInMinutes: 15
+      VpcConfig:
+        VpcId: !Ref vpc01
+        Subnets:
+          - !Ref subnetprivate01
+        SecurityGroupIds:
+          - !Ref securitygroupcodeserver
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-codebuildproject-terraform-destroy
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: devops
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  iamrolepipeline:
+    Type: AWS::IAM::Role
+    Condition: CreatePipeline
+    Properties:
+      RoleName: !Sub ${PrefixCode}-iamrole-pipeline
+      Description: Code pipeline access to S3
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AWSCodeBuildAdminAccess
+      Policies:
+        - PolicyName: !Sub ${PrefixCode}-pipeline-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketVersioning
+                  - s3:PutObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}/*
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-iamrole-pipeline
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  pipelinebuild:
+    Type: AWS::CodePipeline::Pipeline
+    Condition: CreatePipeline
+    Properties:
+      Name: !Sub ${PrefixCode}-pipeline-build
+      RoleArn: !GetAtt iamrolepipeline.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref s3bucketartifact
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref s3bucketgit
+                S3ObjectKey: my-workspace/refs/heads/main/repo.zip
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: SourceCode
+              RunOrder: 1
+              Region: !Ref AWS::Region
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref codebuildprojectbuild
+              InputArtifacts:
+                - Name: SourceCode
+              OutputArtifacts:
+                - Name: BuildOutput
+              RunOrder: 1
+              Region: !Ref AWS::Region
+  pipelinedestroy:
+    Type: AWS::CodePipeline::Pipeline
+    Condition: CreatePipeline
+    Properties:
+      Name: !Sub ${PrefixCode}-pipeline-destroy
+      RoleArn: !GetAtt iamrolepipeline.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref s3bucketartifact
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: 1
+                Provider: S3
+              Configuration:
+                S3Bucket: !Ref s3bucketgit
+                S3ObjectKey: my-workspace/refs/heads/main/repo.zip
+                PollForSourceChanges: false
+              OutputArtifacts:
+                - Name: SourceCode
+              RunOrder: 1
+              Region: !Ref AWS::Region
+        - Name: Approve
+          Actions:
+            - Name: ApproveDestroy
+              ActionTypeId:
+                Category: Approval
+                Owner: AWS
+                Version: 1
+                Provider: Manual
+              Configuration:
+                CustomData: "WARNING: This will destroy all Terraform-managed resources. Are you sure?"
+              RunOrder: 1
+        - Name: Destroy
+          Actions:
+            - Name: Destroy
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Ref codebuildprojectdestroy
+              InputArtifacts:
+                - Name: SourceCode
+              RunOrder: 1
+              Region: !Ref AWS::Region
+  # Trigger code pipeline on S3 event
+  iamroleeventbridge:
+    Type: AWS::IAM::Role
+    Condition: CreatePipeline
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokePipeline
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: codepipeline:StartPipelineExecution
+                Resource: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${pipelinebuild}
+        - PolicyName: WriteToCloudWatch
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${PrefixCode}-pipeline-trigger:*
+  eventbridgeloggroup:
+    Type: AWS::Logs::LogGroup
+    Condition: CreatePipeline
+    Properties:
+      LogGroupName: !Sub /aws/events/${PrefixCode}-pipeline-trigger
+      RetentionInDays: 14
+  eventbridgetriggerrule:
+    Type: AWS::Events::Rule
+    Condition: CreatePipeline
+    Properties:
+      Name: !Sub ${PrefixCode}-pipeline-trigger
+      EventBusName: default
+      EventPattern:
+        source:
+          - aws.s3
+        detail-type:
+          - Object Created
+        detail:
+          bucket:
+            name:
+              - !Ref s3bucketgit
+          object:
+            key:
+              - my-workspace/refs/heads/main/repo.zip
+      State: ENABLED
+      Targets:
+        - Arn: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${pipelinebuild}
+          Id: CodePipelineTarget
+          RoleArn: !GetAtt iamroleeventbridge.Arn
+Outputs:
+  01CodeServerURL:
+    Description: URL to access code-server through CloudFront. Open in a separate tab and then return to collect password below!
+    Value: !Sub https://${cloudfrontdistributioncodeserver.DomainName}
+  02CodeServerPassword:
+    Description: Retrieve your code-server password from AWS Secrets Manager
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/secretsmanager/secret?name=${secretcodeserver}
+## !!!!!!!!!!!!!!!!!!! add cfn-nag
