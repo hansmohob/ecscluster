@@ -1,6 +1,45 @@
+
 # S3 bucket for website hosting
+resource "aws_kms_key" "website" {
+  description             = "KMS key for website bucket encryption"
+  deletion_window_in_days = 7
+  enable_key_rotation     = true
+}
+
+resource "aws_kms_alias" "website" {
+  name          = "alias/${var.PrefixCode}-website-key"
+  target_key_id = aws_kms_key.website.id
+}
+
 resource "aws_s3_bucket" "website" {
   bucket_prefix = "${var.PrefixCode}-website-"
+}
+
+resource "aws_s3_bucket_public_access_block" "website" {
+  bucket = aws_s3_bucket.website.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "website" {
+  bucket = aws_s3_bucket.website.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "website" {
+  bucket = aws_s3_bucket.website.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.website.id
+      sse_algorithm     = "aws:kms"
+    }
+  }
 }
 
 # Create Origin Access Control
@@ -38,9 +77,9 @@ resource "aws_s3_bucket_policy" "website" {
 
 # Upload index.html
 resource "aws_s3_object" "index" {
-  bucket = aws_s3_bucket.website.id
-  key    = "index.html"
-  content = <<EOF
+  bucket       = aws_s3_bucket.website.id
+  key          = "index.html"
+  content      = <<EOF
 <html>
 <body>
 <h1>Hello from Terraform!</h1>
@@ -52,11 +91,71 @@ EOF
   content_type = "text/html"
 }
 
+# Add WAF ACL
+resource "aws_wafv2_web_acl" "website" {
+  provider    = aws.us-east-1
+  name        = "${var.PrefixCode}-waf"
+  description = "WAF Web ACL for CloudFront distribution"
+  scope       = "CLOUDFRONT"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "AWSManagedRulesCommonRuleSet"
+    priority = 1
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesCommonRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name               = "AWSManagedRulesCommonRuleSetMetric"
+      sampled_requests_enabled  = true
+    }
+  }
+
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name               = "WebACLMetric"
+    sampled_requests_enabled  = true
+  }
+}
+
+# Add Response Headers Policy
+resource "aws_cloudfront_response_headers_policy" "security_headers" {
+  name    = "${var.PrefixCode}-security-headers"
+  comment = "Security headers policy"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = 31536000
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
+    }
+    content_security_policy {
+      content_security_policy = "default-src 'self'"
+      override                = true
+    }
+  }
+}
+
 # CloudFront distribution
 resource "aws_cloudfront_distribution" "website" {
   enabled             = true
   default_root_object = "index.html"
-  
+  web_acl_id         = aws_wafv2_web_acl.website.arn
+
   origin {
     domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
     origin_id               = "S3Origin"
@@ -64,10 +163,11 @@ resource "aws_cloudfront_distribution" "website" {
   }
 
   default_cache_behavior {
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = "S3Origin"
-    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    target_origin_id          = "S3Origin"
+    viewer_protocol_policy    = "redirect-to-https"
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security_headers.id
 
     forwarded_values {
       query_string = false
@@ -79,11 +179,13 @@ resource "aws_cloudfront_distribution" "website" {
 
   restrictions {
     geo_restriction {
-      restriction_type = "none"
+      restriction_type = length(var.GeoRestriction) > 0 ? "whitelist" : "none"
+      locations       = var.GeoRestriction
     }
   }
 
   viewer_certificate {
     cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1.2_2021"
   }
 }

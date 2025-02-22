@@ -16,3 +16,8 @@ variable "SolTag" {
   description = "Solution identifier for resource grouping and tagging"
   type        = string
 }
+variable "GeoRestriction" {
+  description = "List of ISO Alpha-2 codes to restrict access https://www.iso.org/obp/ui/#search e.g. "GB", "IE", "US" or leave blank for no restriction
+  type        = list(string)
+  default     = []
+}
