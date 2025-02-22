@@ -17,7 +17,7 @@ variable "SolTag" {
   type        = string
 }
 variable "GeoRestriction" {
-  description = "List of ISO Alpha-2 codes to restrict access https://www.iso.org/obp/ui/#search e.g. "GB", "IE", "US" or leave blank for no restriction
+  description = "List of ISO Alpha-2 country codes for geo-restriction. Example: GB for UK, IE for Ireland. Leave empty [] for no restrictions"
   type        = list(string)
   default     = []
 }

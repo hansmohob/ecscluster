@@ -21,4 +21,5 @@ provider "aws" {
       Provisioner = "Terraform"
       Solution    = var.SolTag
     }
+  }
 }
