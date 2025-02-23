@@ -4,15 +4,23 @@ resource "aws_kms_key" "website" {
   description             = "KMS key for website bucket encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
+
+  tags = {
+    resourcetype = "security"
+  }
 }
 
 resource "aws_kms_alias" "website" {
-  name          = "alias/${var.PrefixCode}-website-key"
+  name          = "alias/${var.PrefixCode}-kms-website"
   target_key_id = aws_kms_key.website.id
 }
 
 resource "aws_s3_bucket" "website" {
-  bucket_prefix = "${var.PrefixCode}-website-"
+  bucket_prefix = "${var.PrefixCode}-s3-website-"
+
+  tags = {
+    resourcetype = "storage"
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "website" {
@@ -44,7 +52,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "website" {
 
 # Create Origin Access Control
 resource "aws_cloudfront_origin_access_control" "website" {
-  name                              = "${var.PrefixCode}-oac"
+  name                              = "${var.PrefixCode}-oac-website"
   description                       = "Origin Access Control for static website"
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
@@ -94,7 +102,7 @@ EOF
 # Add WAF ACL
 resource "aws_wafv2_web_acl" "website" {
   provider    = aws.us-east-1
-  name        = "${var.PrefixCode}-waf"
+  name        = "${var.PrefixCode}-waf-website"
   description = "WAF Web ACL for CloudFront distribution"
   scope       = "CLOUDFRONT"
 
@@ -129,11 +137,15 @@ resource "aws_wafv2_web_acl" "website" {
     metric_name               = "WebACLMetric"
     sampled_requests_enabled  = true
   }
+
+  tags = {
+    resourcetype = "security"
+  }
 }
 
 # Add Response Headers Policy
 resource "aws_cloudfront_response_headers_policy" "security_headers" {
-  name    = "${var.PrefixCode}-security-headers"
+  name    = "${var.PrefixCode}-cloudfrontheaders-website"
   comment = "Security headers policy"
 
   security_headers_config {
@@ -187,5 +199,9 @@ resource "aws_cloudfront_distribution" "website" {
   viewer_certificate {
     cloudfront_default_certificate = true
     minimum_protocol_version       = "TLSv1.2_2021"
+  }
+
+  tags = {
+    resourcetype = "network"
   }
 }
