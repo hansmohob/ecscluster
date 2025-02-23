@@ -1,5 +1,6 @@
+# Sample website hosted on Amazon S3 with CloudFront distribution and WAF protection
 
-# S3 bucket for website hosting
+# KMS key for encrypting S3 bucket contents
 resource "aws_kms_key" "website" {
   description             = "KMS key for website bucket encryption"
   deletion_window_in_days = 7
@@ -15,6 +16,7 @@ resource "aws_kms_alias" "website" {
   target_key_id = aws_kms_key.website.id
 }
 
+# S3 bucket to store website content
 resource "aws_s3_bucket" "website" {
   bucket_prefix = "${var.PrefixCode}-s3-website-"
 
@@ -50,7 +52,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "website" {
   }
 }
 
-# Create Origin Access Control
+# Configure CloudFront Origin Access Control for secure S3 access
 resource "aws_cloudfront_origin_access_control" "website" {
   name                              = "${var.PrefixCode}-oac-website"
   description                       = "Origin Access Control for static website"
@@ -59,6 +61,7 @@ resource "aws_cloudfront_origin_access_control" "website" {
   signing_protocol                  = "sigv4"
 }
 
+# Bucket policy allowing CloudFront to access S3 content
 resource "aws_s3_bucket_policy" "website" {
   bucket = aws_s3_bucket.website.id
 
@@ -83,7 +86,7 @@ resource "aws_s3_bucket_policy" "website" {
   })
 }
 
-# Upload index.html
+# Sample index.html file for the website
 resource "aws_s3_object" "index" {
   bucket       = aws_s3_bucket.website.id
   key          = "index.html"
@@ -99,7 +102,7 @@ EOF
   content_type = "text/html"
 }
 
-# Add WAF ACL
+# WAF web ACL to protect CloudFront distribution
 resource "aws_wafv2_web_acl" "website" {
   provider    = aws.us-east-1
   name        = "${var.PrefixCode}-waf-website"
@@ -143,7 +146,7 @@ resource "aws_wafv2_web_acl" "website" {
   }
 }
 
-# Add Response Headers Policy
+# Security headers policy for CloudFront responses
 resource "aws_cloudfront_response_headers_policy" "security_headers" {
   name    = "${var.PrefixCode}-cloudfrontheaders-website"
   comment = "Security headers policy"
@@ -162,7 +165,7 @@ resource "aws_cloudfront_response_headers_policy" "security_headers" {
   }
 }
 
-# CloudFront distribution
+# CloudFront distribution for content delivery
 resource "aws_cloudfront_distribution" "website" {
   enabled             = true
   default_root_object = "index.html"
