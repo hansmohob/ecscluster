@@ -32,17 +32,17 @@ Parameters:
   GitHubRepo:
     Type: String
     Default: https://github.com/hansmohob/ecscluster.git
-    Description: Source GitHub repository URL containing initial content to be cloned into code-server workspace
+    Description: GitHub repository URL to clone as initial workspace content for code-server
   DeployPipeline:
     Type: String
     Default: false
     AllowedValues:
       - true
       - false
-    Description: Deploy sample CodeBuild Pipeline to build Amazon ECS cluster using Terraform
+    Description: Deploy AWS CodePipeline with CodeBuild to automatically build/destroy infrastructure using Terraform
   CodeServerVersion:
     Type: String
-    Default: 4.96.4
+    Default: 4.97.2
     Description: Version of code-server to install. See available versions at github.com/coder/code-server/releases
   AMICodeServer:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
@@ -50,12 +50,12 @@ Parameters:
     Description: SSM parameter path for latest Amazon Linux 2023 AMI in current region
   PrefixCode:
     Type: String
-    Default: prw
+    Default: devbox
     Description: Resource naming prefix for uniqueness and organization. Must be lowercase alphanumeric and cannot start with 'aws'
   EnvironmentTag:
     Type: String
     Default: production
-    Description: Environment identifier for resource tagging (e.g., dev, prod)
+    Description: Environment identifier for resource tagging e.g. dev, prod
   SolutionTag:
     Type: String
     Default: SecureDeveloperEnvironment
@@ -226,7 +226,8 @@ Resources:
                   - logs:DescribeLogGroups
                   - logs:DescribeLogStreams
                 Resource: 
-                  - !Sub arn:${AWS::Partition}:logs:*:*:*
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${PrefixCode}-vpcflowlog:*
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${PrefixCode}-vpcflowlog:*:*
                 Condition:
                   StringEquals:
                     "aws:SourceAccount": !Sub "${AWS::AccountId}"
@@ -234,7 +235,7 @@ Resources:
                     "aws:SourceArn": !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*"
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-iamrole-vpcflowlogs
+          Value: !Sub ${PrefixCode}-iampolicy-VpcFlowLogsPermissions
         - Key: provisioner
           Value: CFN
         - Key: solution
@@ -249,6 +250,17 @@ Resources:
       KmsKeyId: !GetAtt kmskey.Arn
       LogGroupName: !Sub /aws/events/${PrefixCode}-vpcflowlog
       RetentionInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-vpcflowloggroup
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: monitoring
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
   vpcflowlog:
     Type: AWS::EC2::FlowLog
     Properties:
@@ -268,12 +280,12 @@ Resources:
           Value: monitoring
         - Key: environment
           Value: !Sub ${EnvironmentTag}
-  internetgateway01:
+  internetgateway:
     Type: AWS::EC2::InternetGateway
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub ${PrefixCode}-internetgateway01
+          Value: !Sub ${PrefixCode}-internetgateway
         - Key: provisioner
           Value: CFN
         - Key: solution
@@ -282,11 +294,11 @@ Resources:
           Value: network
         - Key: environment
           Value: !Sub ${EnvironmentTag}
-  internetgateway01attach:
+  internetgatewayattach:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties:
       VpcId: !Ref vpc01
-      InternetGatewayId: !Ref internetgateway01
+      InternetGatewayId: !Ref internetgateway
   subnetpublic01:
     Type: AWS::EC2::Subnet
     Properties:
@@ -359,7 +371,7 @@ Resources:
   natgateway01:
     Type: AWS::EC2::NatGateway
     Properties:
-      AllocationId: !GetAtt   elasticip01.AllocationId
+      AllocationId: !GetAtt elasticip01.AllocationId
       SubnetId: !Ref subnetpublic01
       Tags:
         - Key: Name
@@ -372,7 +384,7 @@ Resources:
           Value: network
         - Key: environment
           Value: !Sub ${EnvironmentTag}
-    DependsOn: internetgateway01
+    DependsOn: internetgateway
   routetablepublic:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -393,7 +405,7 @@ Resources:
     Properties:
       RouteTableId: !Ref routetablepublic
       DestinationCidrBlock: 0.0.0.0/0
-      GatewayId: !GetAtt internetgateway01.InternetGatewayId
+      GatewayId: !GetAtt internetgateway.InternetGatewayId
   routeassociationpublic01:
     Type: AWS::EC2::SubnetRouteTableAssociation
     Properties:
@@ -431,7 +443,7 @@ Resources:
       SubnetId: !Ref subnetprivate01
       RouteTableId: !Ref routetableprivate
 
-  ### Access Layer - ALB and CloudFront distribution with optional WAF for secure access to code-server
+  ### Access Layer - ALB and CloudFront distribution for secure access to code-server
   albcodeserver:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
@@ -459,7 +471,7 @@ Resources:
     Properties:
       HealthCheckPath: /
       HealthCheckPort: '8080'
-      Name: !Sub ${PrefixCode}-tg-codeserver
+      Name: !Sub ${PrefixCode}-targetgroup-codeserver
       Port: 8080
       Protocol: HTTP
       TargetType: instance
@@ -585,6 +597,24 @@ Resources:
           OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # Managed AllViewer Policy
           TargetOriginId: CodeServerOrigin
           ViewerProtocolPolicy: redirect-to-https
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-cloudfrontdistribution-alb
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: network
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-CFR4
+            reason: "The CloudFront distribution uses HTTP to communicate with the ALB internally within AWS network. HTTPS is enforced for external viewers. Upgrading to end-to-end HTTPS requires additional configuration of SSL certificates on the ALB, which adds complexity to this development environment."
+          - id: AwsSolutions-CFR5
+            reason: "Origin communication uses HTTP within AWS internal network. Adding TLS between CloudFront and ALB would require certificate management overhead inappropriate for this development environment."
   cloudfrontsecretheadercodeserver:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -607,6 +637,11 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W77
+            reason: "This secret is used as a static verification header between CloudFront and ALB. Rotation would require updating both CloudFront and ALB configurations, adding unnecessary complexity for a development environment."
   securitygroupcodeserver:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -661,6 +696,11 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W77
+            reason: "This secret is for a temporary developer environment and does not require rotation. Main security is handled by CloudFront and ALB architecture."
 
   ### Source Control Storage - S3 bucket configured as a git remote for version control, acting as a serverless git repository with encryption and access controls
   s3bucketgit:
@@ -691,6 +731,11 @@ Resources:
           Value: storage
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "Development environment git storage bucket with existing security controls. Access logging would add unnecessary complexity and cost."
   s3bucketpolicygit:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -725,17 +770,19 @@ Resources:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-EC2
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action:
                   - ec2:DescribeInstances
-                Resource:
-                  - '*'
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    'aws:SourceAccount': !Ref AWS::AccountId
         # https://docs.aws.amazon.com/systems-manager/latest/userguide/security_iam_service-with-iam.html
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-systemsmanager
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-SystemsManager
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -745,7 +792,7 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*
                   - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-StartPortForwardingSession
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-cloudwatch
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-CloudWatch
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -757,7 +804,7 @@ Resources:
                   - logs:DescribeLogStreams
                 Resource:
                   - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/ec2/*
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-kms
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-KMS
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -777,7 +824,7 @@ Resources:
                   - secretsmanager:DescribeSecret
                 Resource:
                   - !Ref secretcodeserver
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-s3
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-S3
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -801,6 +848,11 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: "EC2 describe permissions require '*' resource. Access is limited to specific actions and the instance's own account."
   iaminstanceprofile01:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -921,16 +973,24 @@ Resources:
           EOF
           chown -R ec2-user:ec2-user /home/ec2-user/.local
 
+          echo "INFO: Installing Terraform..."
+          dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+          dnf install -y terraform
+
+          echo "INFO: Installing Docker..."
+          dnf install -y docker
+
+          echo "INFO: Installing kubectl..."
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+          su - ec2-user -c "echo 'source <(kubectl completion bash)' >>~/.bashrc"
+
           echo "INFO: Installing extensions..."
           su - ec2-user -c "code-server --install-extension amazonwebservices.amazon-q-vscode --force"
           su - ec2-user -c "code-server --install-extension amazonwebservices.aws-toolkit-vscode --force"
           su - ec2-user -c "code-server --install-extension hashicorp.terraform --force"
           su - ec2-user -c "code-server --install-extension ms-azuretools.vscode-docker --force"
           su - ec2-user -c "code-server --install-extension ms-kubernetes-tools.vscode-kubernetes-tools --force"
-
-          echo "INFO: Installing Terraform..."
-          dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
-          dnf install -y terraform
 
           echo "INFO: Starting code-server service..."
           systemctl enable code-server
@@ -966,8 +1026,13 @@ Resources:
           Value: compute
         - Key: environment
           Value: !Sub ${EnvironmentTag}
-
-  ### Developer role with elevated permissions used by both code-server AWS profile and CodeBuild pipeline to deploy static website hosted on Amazon S3
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-EC29
+            reason: "Single developer instance designed for temporary use. Termination protection and ASG not implemented to allow clean stack deletion. Instance backup/recovery handled through git commits to S3."
+  
+  ### IMPORTANT: Developer role with elevated permissions used by both code-server AWS profile and CodeBuild pipeline to deploy sa,ple project [static website hosted on Amazon S3] - review and adjust based on requirements
   iamroledeveloper:
     Type: AWS::IAM::Role
     Properties:
@@ -982,6 +1047,44 @@ Resources:
               AWS: !GetAtt iamrolecodeserver.Arn
             Action: sts:AssumeRole
       Policies:
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-create
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:CreateKey
+                  - kms:ListAliases
+                Resource: "*"
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-alias
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-key
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:CreateAlias
+                  - kms:CreateGrant
+                  - kms:Decrypt
+                  - kms:DeleteAlias
+                  - kms:DescribeKey
+                  - kms:EnableKeyRotation
+                  - kms:GetKeyPolicy
+                  - kms:GetKeyRotationStatus
+                  - kms:ListResourceTags
+                  - kms:PutKeyPolicy
+                  - kms:RetireGrant
+                  - kms:ScheduleKeyDeletion
+                  - kms:TagResource
+                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*
         - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-s3
           PolicyDocument:
             Version: 2012-10-17
@@ -999,9 +1102,54 @@ Resources:
               - Effect: Allow
                 Action:
                   - cloudfront:*
+                  - wafv2:AssociateWebACL
+                  - wafv2:DisassociateWebACL
                 Resource: 
                   - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*
                   - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/*
+                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-cloudfront-headers
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudfront:CreateResponseHeadersPolicy
+                  - cloudfront:DeleteResponseHeadersPolicy
+                  - cloudfront:GetResponseHeadersPolicy
+                  - cloudfront:UpdateResponseHeadersPolicy
+                  - cloudfront:ListTagsForResource
+                  - cloudfront:TagResource
+                  - cloudfront:UntagResource
+                Resource: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/*
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-waf
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - wafv2:CreateWebACL
+                  - wafv2:DeleteWebACL
+                  - wafv2:GetWebACL
+                  - wafv2:UpdateWebACL
+                  - wafv2:ListTagsForResource
+                  - wafv2:TagResource
+                  - wafv2:UntagResource
+                Resource:
+                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/*
+                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/managedruleset/*/*
+              - Effect: Allow
+                Action:
+                  - wafv2:GetManagedRuleSet
+                  - wafv2:ListAvailableManagedRuleGroups
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/managedruleset/*
+                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/managedruleset/*/*
+              - Effect: Allow
+                Action:
+                  - wafv2:ListWebACLs
+                Resource: "*"
         - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2
           PolicyDocument:
             Version: 2012-10-17
@@ -1027,12 +1175,16 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
-
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: "Developer role requires broad S3 permissions to manage website content and Terraform state. Access is restricted to buckets with specific prefix and limited to resources within this development environment. EC2 network interface permissions require * resource due to CodeBuild VPC requirements."
   # Policy allowing code-server user to assume the developer role
   iamrolepolicyassumedeveloper:
     Type: AWS::IAM::Policy
     Properties:
-      PolicyName: !Sub ${PrefixCode}-iampolicy-assumedeveloper
+      PolicyName: !Sub ${PrefixCode}-iampolicy-assume-Developer
       PolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -1042,7 +1194,7 @@ Resources:
       Roles:
         - !Ref iamrolecodeserver
 
-  ### CI/CD - CodeBuild and Pipeline for automated infrastructure deployment via Terraform
+  ### CI/CD - CodeBuild and CodePipeline for automated infrastructure deployment via Terraform
   # S3 bucket for codepipeline artifacts AND TERRAFORM STATE!
   s3bucketartifact:
     Type: AWS::S3::Bucket
@@ -1128,13 +1280,14 @@ Resources:
               ArnEquals:
                 ec2:Subnet:
                   - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${subnetprivate01}
-  # Code Pipeline deployment
+  # Terrafrom apply CodeBuild Project
   codebuildprojectbuild:
     Type: AWS::CodeBuild::Project
     Condition: CreatePipeline
     Properties:
-      Name: !Sub ${PrefixCode}-deploy
+      Name: !Sub ${PrefixCode}-codebuildproject-terraform-build
       Description: Deploy Terraform-managed resources (automatically triggered)
+      EncryptionKey: !GetAtt kmskey.Arn
       Artifacts:
         Type: NO_ARTIFACTS
       Environment:
@@ -1163,13 +1316,16 @@ Resources:
                 - terraform init -backend-config="bucket=${s3bucketartifact}" -backend-config="region=${AWS::Region}"
             build:
               commands:
-                # Pass prefix to Terraform to ensure created resources match IAM permissions and naming convention
+                # Pass region and prefix to Terraform to ensure created resources match IAM permissions and naming convention
                 - terraform plan -var="PrefixCode=${PrefixCode}" -var="Region=${AWS::Region}"
                 - terraform apply -auto-approve -var="PrefixCode=${PrefixCode}" -var="Region=${AWS::Region}"
             post_build:
               commands:
-                - echo "Terraform apply completed on `date`"
+                - echo "Terraform apply completed on $(date)"
                 - echo "Website URL -> https://$(terraform output -raw website_url)"
+                - echo "WEBSITE_URL=https://$(terraform output -raw website_url)" >> $CODEBUILD_SRC_DIR/variables.env
+              exported-variables:
+                - WEBSITE_URL
       TimeoutInMinutes: 15
       VpcConfig:
         VpcId: !Ref vpc01
@@ -1188,12 +1344,14 @@ Resources:
           Value: devops
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+  # Terrafrom destroy CodeBuild Project
   codebuildprojectdestroy:
     Type: AWS::CodeBuild::Project
     Condition: CreatePipeline
     Properties:
-      Name: !Sub ${PrefixCode}-destroy
+      Name: !Sub ${PrefixCode}-codebuildproject-terraform-destroy
       Description: Destroys Terraform-managed resources (manual trigger only)
+      EncryptionKey: !GetAtt kmskey.Arn
       Artifacts:
         Type: NO_ARTIFACTS
       Environment:
@@ -1229,7 +1387,7 @@ Resources:
             
             post_build:
               commands:
-                - echo "Terraform destroy completed on `date`"
+                - echo "Terraform destroy completed on $(date)"
       TimeoutInMinutes: 15
       VpcConfig:
         VpcId: !Ref vpc01
@@ -1261,10 +1419,20 @@ Resources:
             Principal:
               Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - !Sub arn:${AWS::Partition}:iam::aws:policy/AWSCodeBuildAdminAccess
       Policies:
-        - PolicyName: !Sub ${PrefixCode}-pipeline-policy
+        - PolicyName: !Sub ${PrefixCode}-pipeline-codebuild
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                  - codebuild:StopBuild
+                Resource:
+                  - !GetAtt codebuildprojectbuild.Arn
+                  - !GetAtt codebuildprojectdestroy.Arn
+        - PolicyName: !Sub ${PrefixCode}-pipeline-s3
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -1296,11 +1464,12 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+  # Terrafrom apply pipeline
   pipelinebuild:
     Type: AWS::CodePipeline::Pipeline
     Condition: CreatePipeline
     Properties:
-      Name: !Sub ${PrefixCode}-pipeline-build
+      Name: !Sub ${PrefixCode}-pipeline-terraform-build
       RoleArn: !GetAtt iamrolepipeline.Arn
       ArtifactStore:
         Type: S3
@@ -1338,11 +1507,23 @@ Resources:
                 - Name: BuildOutput
               RunOrder: 1
               Region: !Ref AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-pipeline-terraform-build
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: devops
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  # Terrafrom destroy pipeline
   pipelinedestroy:
     Type: AWS::CodePipeline::Pipeline
     Condition: CreatePipeline
     Properties:
-      Name: !Sub ${PrefixCode}-pipeline-destroy
+      Name: !Sub ${PrefixCode}-pipeline-terraform-destroy
       RoleArn: !GetAtt iamrolepipeline.Arn
       ArtifactStore:
         Type: S3
@@ -1389,6 +1570,17 @@ Resources:
                 - Name: SourceCode
               RunOrder: 1
               Region: !Ref AWS::Region
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-pipeline-terraform-destroy
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: devops
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
   # Trigger code pipeline on S3 event
   iamroleeventbridge:
     Type: AWS::IAM::Role
@@ -1402,14 +1594,14 @@ Resources:
               Service: events.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: InvokePipeline
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-InvokePipeline
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Effect: Allow
                 Action: codepipeline:StartPipelineExecution
                 Resource: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${pipelinebuild}
-        - PolicyName: WriteToCloudWatch
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-WriteToCloudWatch
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -1418,12 +1610,28 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${PrefixCode}-pipeline-trigger:*
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: "The wildcard in the log group ARN is necessary to allow EventBridge to create and write to log streams within the specific log group. This permission is scoped to a single, specific log group for this pipeline trigger."
   eventbridgeloggroup:
     Type: AWS::Logs::LogGroup
     Condition: CreatePipeline
     Properties:
       LogGroupName: !Sub /aws/events/${PrefixCode}-pipeline-trigger
       RetentionInDays: 14
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-pipeline-trigger
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: monitoring
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
   eventbridgetriggerrule:
     Type: AWS::Events::Rule
     Condition: CreatePipeline
@@ -1454,4 +1662,3 @@ Outputs:
   02CodeServerPassword:
     Description: Retrieve your code-server password from AWS Secrets Manager
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/secretsmanager/secret?name=${secretcodeserver}
-## !!!!!!!!!!!!!!!!!!! add cfn-nag
