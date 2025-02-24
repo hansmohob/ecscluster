@@ -443,6 +443,79 @@ Resources:
       SubnetId: !Ref subnetprivate01
       RouteTableId: !Ref routetableprivate
 
+  ### Centralized logging bucket for CloudFront and S3 access logs
+  s3bucketlogs:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              KmsKeyId: !GetAtt kmskey.Arn
+              SSEAlgorithm: aws:kms
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldLogs
+            Status: Enabled
+            ExpirationInDays: 30
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-logs
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: storage
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This is an access logs bucket and does not need its own access logging."
+
+  s3bucketpolicylogs:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref s3bucketlogs
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: EnforceSecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+              NumericLessThan:
+                s3:TlsVersion: 1.2
+          - Sid: AllowS3LogDelivery
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: 
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/s3-logs/*
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/cloudfront-logs/*
+          - Sid: AllowCloudFrontLogDelivery
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/cloudfront-logs/*
+
   ### Access Layer - ALB and CloudFront distribution for secure access to code-server
   albcodeserver:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -466,6 +539,11 @@ Resources:
           Value: network
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: CKV_AWS_131
+            reason: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
   albtargetgroupcodeserver:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -502,6 +580,13 @@ Resources:
       LoadBalancerArn: !Ref albcodeserver
       Port: 80
       Protocol: HTTP
+    Metadata:
+        cfn_nag:
+          rules_to_suppress:
+            - id: W56
+              reason: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
+            - id: CKV_AWS_103
+              reason: "TLS check not applicable - ALB uses HTTP internally. External TLS 1.2 enforced at CloudFront. Consider end-to-end HTTPS if required."
   # Allow traffic only if secret header from CloudFront is present
   alblistenerrulecodeserver:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
@@ -597,6 +682,10 @@ Resources:
           OriginRequestPolicyId: 216adef6-5c7f-47e4-b989-5492eafa07d3  # Managed AllViewer Policy
           TargetOriginId: CodeServerOrigin
           ViewerProtocolPolicy: redirect-to-https
+        Logging:
+          Bucket: !GetAtt s3bucketlogs.DomainName
+          IncludeCookies: false
+          Prefix: cloudfront-logs/
       Tags:
         - Key: Name
           Value: !Sub ${PrefixCode}-cloudfrontdistribution-alb
@@ -612,9 +701,13 @@ Resources:
       cdk_nag:
         rules_to_suppress:
           - id: AwsSolutions-CFR4
-            reason: "The CloudFront distribution uses HTTP to communicate with the ALB internally within AWS network. HTTPS is enforced for external viewers. Upgrading to end-to-end HTTPS requires additional configuration of SSL certificates on the ALB, which adds complexity to this development environment."
+            reason: "CloudFront uses HTTP internally with ALB. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
           - id: AwsSolutions-CFR5
-            reason: "Origin communication uses HTTP within AWS internal network. Adding TLS between CloudFront and ALB would require certificate management overhead inappropriate for this development environment."
+            reason: "Origin uses HTTP within AWS network. Consider end-to-end HTTPS if certificate management overhead is acceptable."
+          - id: CKV_AWS_174
+            reason: "Using CloudFront default certificate with TLS 1.2. Consider custom certificate if custom domain required."
+          - id: CKV_AWS_68
+            reason: "Security handled by CloudFront origin header, IP restrictions and ALB rules. WAF needs us-east-1 deployment. Consider using StackSets for WAF if required"
   cloudfrontsecretheadercodeserver:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -641,7 +734,7 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: W77
-            reason: "This secret is used as a static verification header between CloudFront and ALB. Rotation would require updating both CloudFront and ALB configurations, adding unnecessary complexity for a development environment."
+            reason: "Secret used for CloudFront-ALB origin verification. Rotation requires CloudFront/ALB updates. Consider automated rotation if required."
   securitygroupcodeserver:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -700,7 +793,7 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: W77
-            reason: "This secret is for a temporary developer environment and does not require rotation. Main security is handled by CloudFront and ALB architecture."
+            reason: "Secret used for code-server authentication. Security handled through CloudFront and ALB controls. Consider implementing Lambda-based rotation mechanism if required."
 
   ### Source Control Storage - S3 bucket configured as a git remote for version control, acting as a serverless git repository with encryption and access controls
   s3bucketgit:
@@ -718,6 +811,9 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref s3bucketlogs
+        LogFilePrefix: s3-logs/git/
       # Required for pipeline build
       NotificationConfiguration:
         EventBridgeConfiguration:
@@ -731,11 +827,6 @@ Resources:
           Value: storage
         - Key: environment
           Value: !Sub ${EnvironmentTag}
-    Metadata:
-      cfn_nag:
-        rules_to_suppress:
-          - id: W35
-            reason: "Development environment git storage bucket with existing security controls. Access logging would add unnecessary complexity and cost."
   s3bucketpolicygit:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -852,7 +943,7 @@ Resources:
       cdk_nag:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
-            reason: "EC2 describe permissions require '*' resource. Access is limited to specific actions and the instance's own account."
+            reason: "EC2 instance requires describe permissions. Access limited by SourceAccount condition, specific actions, and scoped resources for S3, KMS, and Secrets Manager."
   iaminstanceprofile01:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -1030,7 +1121,7 @@ Resources:
       cdk_nag:
         rules_to_suppress:
           - id: AwsSolutions-EC29
-            reason: "Single developer instance designed for temporary use. Termination protection and ASG not implemented to allow clean stack deletion. Instance backup/recovery handled through git commits to S3."
+            reason: "Development instance uses S3 for code and state persistence. Consider ASG implementation if high availability required."
   
   ### IMPORTANT: Developer role with elevated permissions used by both code-server AWS profile and CodeBuild pipeline to deploy sa,ple project [static website hosted on Amazon S3] - review and adjust based on requirements
   iamroledeveloper:
@@ -1179,7 +1270,7 @@ Resources:
       cdk_nag:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
-            reason: "Developer role requires broad S3 permissions to manage website content and Terraform state. Access is restricted to buckets with specific prefix and limited to resources within this development environment. EC2 network interface permissions require * resource due to CodeBuild VPC requirements."
+            reason: "Role scoped to prefix-matched S3 buckets and account-specific resources. Wildcard required for EC2/CodeBuild networking. Consider further restrictions if required."
   # Policy allowing code-server user to assume the developer role
   iamrolepolicyassumedeveloper:
     Type: AWS::IAM::Policy
@@ -1614,7 +1705,7 @@ Resources:
       cdk_nag:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
-            reason: "The wildcard in the log group ARN is necessary to allow EventBridge to create and write to log streams within the specific log group. This permission is scoped to a single, specific log group for this pipeline trigger."
+            reason: "Wildcard required for log stream access. Permission scoped to single log group. Consider removal if pipeline logging not required."
   eventbridgeloggroup:
     Type: AWS::Logs::LogGroup
     Condition: CreatePipeline
