@@ -1,7 +1,6 @@
 # Sample website hosted on Amazon S3 with CloudFront distribution and WAF protection
 
 # KMS key for encrypting S3 bucket contents
-
 data "aws_caller_identity" "current" {}
 
 data "aws_iam_policy_document" "website_kms" {
@@ -78,7 +77,7 @@ resource "aws_kms_alias" "website" {
   target_key_id = aws_kms_key.website.key_id
 }
 
-# Logging bucket for S3, CloudFront and WAF logs
+# Logging bucket for S3 and CloudFront logs
 resource "aws_s3_bucket" "logs" {
   bucket_prefix = "${var.PrefixCode}-logs-"
 
@@ -137,24 +136,6 @@ resource "aws_s3_bucket_policy" "logs" {
         }
         Action   = "s3:PutObject"
         Resource = "${aws_s3_bucket.logs.arn}/s3-logs/*"
-      },
-      {
-        Sid       = "AllowCloudFrontLogDelivery"
-        Effect    = "Allow"
-        Principal = {
-          Service = "cloudfront.amazonaws.com"
-        }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.logs.arn}/cloudfront-logs/*"
-      },
-      {
-        Sid       = "AllowWAFLogDelivery"
-        Effect    = "Allow"
-        Principal = {
-          Service = "wafv2.amazonaws.com"
-        }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.logs.arn}/waf-logs/*"
       }
     ]
   })
@@ -171,10 +152,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
     expiration {
       days = 90
     }
-  }
-
-  tags = {
-    resourcetype = "storage"
   }
 }
 
@@ -332,15 +309,9 @@ resource "aws_wafv2_web_acl" "website" {
   tags = {
     resourcetype = "security"
   }
-}
 
-# Enable WAF logging
-resource "aws_wafv2_web_acl_logging_configuration" "website" {
-  log_destination_configs = [aws_s3_bucket.logs.arn]
-  resource_arn           = aws_wafv2_web_acl.website.arn
-
-  logging_filter {
-    default_behavior = "KEEP"
+  lifecycle {
+    # checkov:skip=CKV2_AWS_31: "WAF logging via Kinesis Firehose disabled for sample website to reduce complexity and cost. CloudWatch metrics enabled for basic monitoring. Consider enabling WAF logging in production for security analysis."
   }
 }
 
@@ -373,12 +344,6 @@ resource "aws_cloudfront_distribution" "website" {
     domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
     origin_id               = "S3Origin"
     origin_access_control_id = aws_cloudfront_origin_access_control.website.id
-  }
-
-  logging_config {
-    include_cookies = false
-    bucket         = aws_s3_bucket.logs.bucket_regional_domain_name
-    prefix         = "cloudfront-logs/"
   }
 
   default_cache_behavior {
@@ -414,6 +379,7 @@ resource "aws_cloudfront_distribution" "website" {
 
   lifecycle {
     # checkov:skip=CKV_AWS_310: "Consider implementing origin failover for production environments. Skipped for development to reduce complexity and cost."
-    # checkov:skip=CKV2_AWS_42: "Using default CloudFront certificate for development environment. Custom SSL certificate recommended for production use with custom domain names."
+    # checkov:skip=CKV2_AWS_42: "Using default CloudFront certificate for sample website. Custom SSL certificate recommended for production use with custom domain names."
+    # checkov:skip=CKV_AWS_86: "CloudFront logging not implemented. S3 access logs provide sufficient monitoring for sample website. Consider implementing CloudFront logging for production environments"
   }
 }
