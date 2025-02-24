@@ -13,6 +13,7 @@ Metadata:
           - CodeServerVersion
           - GitHubRepo
           - DeployPipeline
+          - RotateSecret
       - Label:
           default: Compute settings
         Parameters:
@@ -40,6 +41,13 @@ Parameters:
       - true
       - false
     Description: Deploy AWS CodePipeline with CodeBuild to automatically build/destroy infrastructure using Terraform
+  RotateSecret:
+    Type: String
+    Default: false
+    AllowedValues:
+      - true
+      - false
+    Description: Rotate code-server secret every 30 days.
   CodeServerVersion:
     Type: String
     Default: 4.97.2
@@ -102,6 +110,7 @@ Mappings:
 
 Conditions:
   CreatePipeline: !Equals [!Ref DeployPipeline, "true"]
+  EnableRotation: !Equals [!Ref RotateSecret, "true"]
 
 Resources:
 
@@ -151,7 +160,7 @@ Resources:
             Action:
               - kms:*
             Resource: "*"
-          - Sid: Enable Cloudwatch access to KMS Key
+          - Sid: Enable Cloudwatch access to KMS Key for VPC log group
             # https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html
             Effect: Allow
             Principal:
@@ -451,8 +460,7 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              KmsKeyId: !GetAtt kmskey.Arn
-              SSEAlgorithm: aws:kms
+              SSEAlgorithm: AES256
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -460,6 +468,9 @@ Resources:
         RestrictPublicBuckets: true
       VersioningConfiguration:
         Status: Enabled
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: ObjectWriter
       LifecycleConfiguration:
         Rules:
           - Id: DeleteOldLogs
@@ -481,7 +492,6 @@ Resources:
         rules_to_suppress:
           - id: W35
             reason: "This is an access logs bucket and does not need its own access logging."
-
   s3bucketpolicylogs:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -499,22 +509,59 @@ Resources:
             Condition:
               Bool:
                 aws:SecureTransport: false
+          - Sid: Allow TLS 1.2 and above
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - s3:*
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/*
+            Condition:
               NumericLessThan:
                 s3:TlsVersion: 1.2
-          - Sid: AllowS3LogDelivery
+          # https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
+          # Consider limiting principle to specific region
+          - Sid: Allow ALB logging access regions available as of August 2022 or later
             Effect: Allow
             Principal:
-              Service: logging.s3.amazonaws.com
-            Action: s3:PutObject
-            Resource: 
-              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/s3-logs/*
-              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/cloudfront-logs/*
-          - Sid: AllowCloudFrontLogDelivery
+              Service: logdelivery.elasticloadbalancing.amazonaws.com
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/*
+          - Sid: Allow ALB logging access regions available before August 2022
             Effect: Allow
             Principal:
-              Service: cloudfront.amazonaws.com
-            Action: s3:PutObject
-            Resource: !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/cloudfront-logs/*
+              AWS: 
+                - arn:aws:iam::127311923021:root #US East (N. Virginia) 
+                - arn:aws:iam::033677994240:root #US East (Ohio)
+                - arn:aws:iam::027434742980:root #US West (N. California)
+                - arn:aws:iam::797873946194:root #US West (Oregon)
+                - arn:aws:iam::098369216593:root #Africa (Cape Town)
+                - arn:aws:iam::754344448648:root #Asia Pacific (Hong Kong)
+                - arn:aws:iam::589379963580:root #Asia Pacific (Jakarta)
+                - arn:aws:iam::718504428378:root #Asia Pacific (Mumbai)
+                - arn:aws:iam::383597477331:root #Asia Pacific (Osaka)
+                - arn:aws:iam::600734575887:root #t #Asia Pacific (Seoul)
+                - arn:aws:iam::114774131450:root #Asia Pacific (Singapore)
+                - arn:aws:iam::783225319266:root #Asia Pacific (Sydney)
+                - arn:aws:iam::582318560864:root #Asia Pacific (Tokyo) 
+                - arn:aws:iam::985666609251:root #Canada (Central) 
+                - arn:aws:iam::054676820928:root #Europe (Frankfurt)
+                - arn:aws:iam::156460612806:root #Europe (Ireland)
+                - arn:aws:iam::652711504416:root #Europe (London)
+                - arn:aws:iam::635631232127:root #Europe (Milan)
+                - arn:aws:iam::009996457667:root #Europe (Paris) 
+                - arn:aws:iam::897822967062:root #Europe (Stockholm)
+                - arn:aws:iam::076674570225:root #Middle East (Bahrain)
+                - arn:aws:iam::507241528517:root #South America (São Paulo)
+            Action:
+              - s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/*
 
   ### Access Layer - ALB and CloudFront distribution for secure access to code-server
   albcodeserver:
@@ -528,6 +575,13 @@ Resources:
         - !Ref subnetpublic02
       SecurityGroups:
         - !Ref securitygroupalb
+      LoadBalancerAttributes:
+        - Key: access_logs.s3.enabled
+          Value: true
+        - Key: access_logs.s3.bucket
+          Value: !Ref s3bucketlogs
+        - Key: access_logs.s3.prefix
+          Value: alb-logs
       Tags:
         - Key: Name
           Value: !Sub ${PrefixCode}-alb-codeserver
@@ -770,7 +824,7 @@ Resources:
     Type: AWS::SecretsManager::Secret
     Properties:
       Name: !Sub ${PrefixCode}-secret-codeserver
-      Description: code-server password
+      Description: Initial code-server password. If rotation enabled, refer to the rotating secret after 30 days.
       KmsKeyId: !GetAtt kmskey.Arn
       GenerateSecretString:
         SecretStringTemplate: '{"username": "admin"}'
@@ -803,7 +857,8 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              KMSMasterKeyID: !Ref kmskeyalias
+              SSEAlgorithm: aws:kms
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -903,6 +958,7 @@ Resources:
                 Action:
                   - kms:Decrypt
                   - kms:DescribeKey
+                  - kms:GenerateDataKey
                 Resource:
                   - !GetAtt kmskey.Arn
         - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-secretsmanager
@@ -944,7 +1000,7 @@ Resources:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
             reason: "EC2 instance requires describe permissions. Access limited by SourceAccount condition, specific actions, and scoped resources for S3, KMS, and Secrets Manager."
-  iaminstanceprofile01:
+  iaminstanceprofilecodeserver:
     Type: AWS::IAM::InstanceProfile
     Properties:
       InstanceProfileName: !Sub ${PrefixCode}-iamprofile-ec2admin
@@ -973,7 +1029,7 @@ Resources:
       InstanceType: t3a.xlarge
       KeyName: !Ref ec2keypaircodeserver
       SubnetId: !Ref subnetprivate01
-      IamInstanceProfile: !Ref iaminstanceprofile01
+      IamInstanceProfile: !Ref iaminstanceprofilecodeserver
       Monitoring: true
       PrivateIpAddress: !Sub ${VpcCidr}.3.100
       BlockDeviceMappings:
@@ -1295,7 +1351,8 @@ Resources:
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
+              KMSMasterKeyID: !Ref kmskeyalias
+              SSEAlgorithm: aws:kms
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -1544,6 +1601,18 @@ Resources:
                 Resource:
                   - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}
                   - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}
+        - PolicyName: !Sub ${PrefixCode}-pipeline-kms
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:DescribeKey
+                  - kms:Encrypt
+                  - kms:GenerateDataKey
+                  - kms:ReEncrypt*
+                Resource: !GetAtt kmskey.Arn
       Tags:
         - Key: Name
           Value: !Sub ${PrefixCode}-iamrole-pipeline
@@ -1746,10 +1815,302 @@ Resources:
         - Arn: !Sub arn:${AWS::Partition}:codepipeline:${AWS::Region}:${AWS::AccountId}:${pipelinebuild}
           Id: CodePipelineTarget
           RoleArn: !GetAtt iamroleeventbridge.Arn
+
+### Lambda-based rotation of code-server password
+  secretcodeserverrotating:
+    Type: AWS::SecretsManager::Secret
+    Condition: EnableRotation
+    Properties:
+      Name: !Sub ${PrefixCode}-secret-rotating-codeserver
+      Description: Rotating code-server password that updates automatically every 30 days. This replaces the initial secret after first rotation.
+      KmsKeyId: !GetAtt kmskey.Arn
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "admin"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '\[]{}>|*&!%#`@,."$:+=-~^()'''
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-secret-rotating-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  secretcodeserverrotationschedule:
+    Type: AWS::SecretsManager::RotationSchedule
+    Condition: EnableRotation
+    Properties:
+      SecretId: !Ref secretcodeserverrotating
+      RotationLambdaARN: !GetAtt lambdasecretrotation.Arn
+      RotationRules:
+        AutomaticallyAfterDays: 30
+      RotateImmediatelyOnUpdate: false
+  lambdasecretrotation:
+    # https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotate-secrets_lambda-functions.html
+    Type: AWS::Lambda::Function
+    Condition: EnableRotation
+    Properties:
+      Description: Lambda function to rotate code-server password
+      FunctionName: !Sub ${PrefixCode}-lambda-rotation-codeserver
+      Handler: index.lambda_handler
+      KmsKeyArn: !GetAtt kmskey.Arn
+      Runtime: python3.9
+      Timeout: 300
+      MemorySize: 128
+      Role: !GetAtt iamrolelambda.Arn
+      Environment:
+        Variables:
+          INSTANCE_ID: !Ref ec2codeserver
+          SECRETS_MANAGER_ENDPOINT: !Sub https://secretsmanager.${AWS::Region}.amazonaws.com
+      TracingConfig:
+        Mode: Active
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import logging
+          import os
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          def lambda_handler(event, context):
+              arn = event['SecretId']
+              token = event['ClientRequestToken']
+              step = event['Step']
+
+              # Setup the client
+              service_client = boto3.client('secretsmanager', endpoint_url=os.environ['SECRETS_MANAGER_ENDPOINT'])
+
+              # Make sure the version is staged correctly
+              metadata = service_client.describe_secret(SecretId=arn)
+              if not metadata['RotationEnabled']:
+                  logger.error("Secret %s is not enabled for rotation" % arn)
+                  raise ValueError("Secret %s is not enabled for rotation" % arn)
+              versions = metadata['VersionIdsToStages']
+              if token not in versions:
+                  logger.error("Secret version %s has no stage for rotation of secret %s." % (token, arn))
+                  raise ValueError("Secret version %s has no stage for rotation of secret %s." % (token, arn))
+              if "AWSCURRENT" in versions[token]:
+                  logger.info("Secret version %s already set as AWSCURRENT for secret %s." % (token, arn))
+                  return
+              elif "AWSPENDING" not in versions[token]:
+                  logger.error("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
+                  raise ValueError("Secret version %s not set as AWSPENDING for rotation of secret %s." % (token, arn))
+
+              if step == "createSecret":
+                  create_secret(service_client, arn, token)
+              elif step == "setSecret":
+                  set_secret(service_client, arn, token)
+              elif step == "testSecret":
+                  test_secret(service_client, arn, token)
+              elif step == "finishSecret":
+                  finish_secret(service_client, arn, token)
+              else:
+                  raise ValueError("Invalid step parameter")
+
+          def create_secret(service_client, arn, token):
+              """Create the secret"""
+              # Get current secret to keep username
+              current_secret = service_client.get_secret_value(
+                  SecretId=arn, 
+                  VersionStage="AWSCURRENT"
+              )
+              current_dict = json.loads(current_secret['SecretString'])
+
+              # Generate new password using same rules as original secret
+              passwd = service_client.get_random_password(
+                  ExcludeCharacters='\[]{}>|*&!%#`@,."$:+=-~^()',
+                  PasswordLength=16,
+                  RequireEachIncludedType=True
+              )
+
+              # Create new secret with existing username and new password
+              new_secret = {
+                  'username': current_dict['username'],
+                  'password': passwd['RandomPassword']
+              }
+
+              # Put the secret
+              service_client.put_secret_value(
+                  SecretId=arn,
+                  ClientRequestToken=token,
+                  SecretString=json.dumps(new_secret),
+                  VersionStages=['AWSPENDING']
+              )
+              logger.info(f"createSecret: Successfully put secret for ARN {arn} and version {token}")
+
+          def set_secret(service_client, arn, token):
+              """Set the secret in code-server"""
+              # Get the pending secret
+              pending_secret = service_client.get_secret_value(
+                  SecretId=arn,
+                  VersionStage="AWSPENDING"
+              )
+              pending_dict = json.loads(pending_secret['SecretString'])
+
+              # Use SSM to update code-server config
+              ssm = boto3.client('ssm')
+              instance_id = os.environ['INSTANCE_ID']
+              
+              response = ssm.send_command(
+                  InstanceIds=[instance_id],
+                  DocumentName='AWS-RunShellScript',
+                  Parameters={
+                      'commands': [
+                          'cat > /home/ec2-user/.config/code-server/config.yaml << EOL\n'
+                          'bind-addr: 0.0.0.0:8080\n'
+                          'auth: password\n'
+                          f'password: {pending_dict["password"]}\n'
+                          'cert: false\n'
+                          'EOL',
+                          'systemctl restart code-server'
+                      ]
+                  }
+              )
+              logger.info(f"setSecret: Updated code-server config for instance {instance_id}")
+
+          def test_secret(service_client, arn, token):
+              """Test the secret"""
+              # Check if code-server service is running
+              ssm = boto3.client('ssm')
+              instance_id = os.environ['INSTANCE_ID']
+
+              response = ssm.send_command(
+                  InstanceIds=[instance_id],
+                  DocumentName='AWS-RunShellScript',
+                  Parameters={
+                      'commands': ['systemctl is-active code-server']
+                  }
+              )
+              logger.info(f"testSecret: Verified code-server is running on {instance_id}")
+
+          def finish_secret(service_client, arn, token):
+              """Finish the secret"""
+              # First describe the secret to get the current version
+              metadata = service_client.describe_secret(SecretId=arn)
+              current_version = None
+              for version in metadata["VersionIdsToStages"]:
+                  if "AWSCURRENT" in metadata["VersionIdsToStages"][version]:
+                      if version == token:
+                          # The correct version is already marked as current, return
+                          logger.info("finishSecret: Version %s already marked as AWSCURRENT for %s" % (version, arn))
+                          return
+                      current_version = version
+                      break
+
+              # Finalize by staging the secret version current
+              service_client.update_secret_version_stage(
+                  SecretId=arn,
+                  VersionStage="AWSPENDING",
+                  RemoveFromVersionId=token
+              )
+              service_client.update_secret_version_stage(
+                  SecretId=arn,
+                  VersionStage="AWSCURRENT",
+                  MoveToVersionId=token,
+                  RemoveFromVersionId=current_version
+              )
+              logger.info("finishSecret: Successfully set AWSCURRENT stage to version %s for secret %s." % (token, arn))
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-lambda-rotation-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: compute
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  lambdasecretrotationpermission:
+    Type: AWS::Lambda::Permission
+    Condition: EnableRotation
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref lambdasecretrotation
+      Principal: secretsmanager.amazonaws.com
+  iamrolelambda:
+    Type: AWS::IAM::Role
+    Condition: EnableRotation
+    Properties:
+      RoleName: !Sub ${PrefixCode}-role-secretrotation-codeserver
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SSMPermissions
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:SendCommand
+                  - ssm:GetCommandInvocation
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${ec2codeserver}
+                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:*:document/AWS-RunShellScript
+      Tags:
+        - Key: Name
+          Value: !Sub ${PrefixCode}-role-secretrotation-codeserver
+        - Key: provisioner
+          Value: CFN
+        - Key: solution
+          Value: !Sub ${SolutionTag}
+        - Key: resourcetype
+          Value: security
+        - Key: environment
+          Value: !Sub ${EnvironmentTag}
+  iamrolepolicylambdarotation:
+    Type: AWS::IAM::Policy
+    Condition: EnableRotation
+    Properties:
+      PolicyName: !Sub ${PrefixCode}-policy-rotation-secret-access
+      Roles: 
+        - !Ref iamrolelambda
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - secretsmanager:DescribeSecret
+              - secretsmanager:GetSecretValue
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecretVersionStage
+            Resource: !Ref secretcodeserverrotating
+            Condition:
+              StringEquals:
+                'secretsmanager:resource/AllowRotationLambdaArn': !GetAtt lambdasecretrotation.Arn
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetRandomPassword
+            Resource: '*'
+          - Effect: Allow
+            Action:
+              - kms:Decrypt
+              - kms:GenerateDataKey
+            Resource: !GetAtt kmskey.Arn
+          - Effect: Allow
+            Action:
+              - ssm:SendCommand
+              - ssm:GetCommandInvocation
+            Resource: 
+              - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${ec2codeserver}
 Outputs:
   01CodeServerURL:
     Description: URL to access code-server through CloudFront. Open in a separate tab and then return to collect password below!
     Value: !Sub https://${cloudfrontdistributioncodeserver.DomainName}
   02CodeServerPassword:
-    Description: Retrieve your code-server password from AWS Secrets Manager
+    Description: Retrieve your initial code-server password from AWS Secrets Manager. If rotation is enabled, after 30 days check the 'rotating-codeserver' secret instead
     Value: !Sub https://${AWS::Region}.console.aws.amazon.com/secretsmanager/secret?name=${secretcodeserver}
