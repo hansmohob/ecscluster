@@ -102,14 +102,11 @@ resource "aws_s3_bucket_versioning" "logs" {
   }
 }
 
-resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
+resource "aws_s3_bucket_ownership_controls" "logs" {
   bucket = aws_s3_bucket.logs.id
 
   rule {
-    apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.website.id
-      sse_algorithm     = "aws:kms"
-    }
+    object_ownership = "ObjectWriter"
   }
 }
 
@@ -121,7 +118,6 @@ resource "aws_s3_bucket_logging" "website" {
   target_prefix = "s3-logs/"
 }
 
-# Bucket policy for logging
 resource "aws_s3_bucket_policy" "logs" {
   bucket = aws_s3_bucket.logs.id
 
@@ -129,13 +125,34 @@ resource "aws_s3_bucket_policy" "logs" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "AllowS3LogDelivery"
-        Effect    = "Allow"
-        Principal = {
-          Service = "logging.s3.amazonaws.com"
+        Sid       = "EnforceSecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = [
+          "${aws_s3_bucket.logs.arn}",
+          "${aws_s3_bucket.logs.arn}/*"
+        ]
+        Condition = {
+          Bool = {
+            "aws:SecureTransport" = false
+          }
         }
-        Action   = "s3:PutObject"
-        Resource = "${aws_s3_bucket.logs.arn}/s3-logs/*"
+      },
+      {
+        Sid       = "EnforceTLSVersion"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = [
+          "${aws_s3_bucket.logs.arn}",
+          "${aws_s3_bucket.logs.arn}/*"
+        ]
+        Condition = {
+          NumericLessThan = {
+            "s3:TlsVersion" = 1.2
+          }
+        }
       }
     ]
   })
@@ -328,6 +345,13 @@ resource "aws_cloudfront_distribution" "website" {
     domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
     origin_id               = "S3Origin"
     origin_access_control_id = aws_cloudfront_origin_access_control.website.id
+  }
+
+
+  logging_config {
+    bucket          = aws_s3_bucket.logs.bucket_domain_name
+    include_cookies = false
+    prefix          = "cloudfront-logs/"
   }
 
   default_cache_behavior {
