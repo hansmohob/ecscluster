@@ -1,6 +1,9 @@
 # Sample website hosted on Amazon S3 with CloudFront distribution and WAF protection
 
 # KMS key for encrypting S3 bucket contents
+
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "website_kms" {
   statement {
     # https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html
