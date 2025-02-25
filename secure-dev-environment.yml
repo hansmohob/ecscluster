@@ -1222,7 +1222,9 @@ Resources:
                 Action:
                   - kms:CreateAlias
                   - kms:DeleteAlias
-                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/*
+                Resource: 
+                  - !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/*
+                  - !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*
         - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-s3
           PolicyDocument:
             Version: 2012-10-17
@@ -1250,6 +1252,10 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - wafv2:ListWebACLs
+                Resource: "*"
+              - Effect: Allow
+                Action:
                   - wafv2:CreateWebACL
                   - wafv2:DeleteWebACL
                   - wafv2:GetWebACL
@@ -1259,19 +1265,12 @@ Resources:
                   - wafv2:UntagResource
                   - wafv2:AssociateWebACL
                   - wafv2:DisassociateWebACL
-                Resource:
-                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/*
-              - Effect: Allow
-                Action:
                   - wafv2:GetManagedRuleSet
                   - wafv2:ListAvailableManagedRuleGroups
-                Resource: 
+                Resource:
+                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/*
                   - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/managedruleset/*
                   - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/managedruleset/*/*
-              - Effect: Allow
-                Action:
-                  - wafv2:ListWebACLs
-                Resource: "*"
         - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2codebuild
           PolicyDocument:
             Version: 2012-10-17
