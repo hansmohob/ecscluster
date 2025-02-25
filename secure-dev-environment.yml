@@ -2018,8 +2018,6 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Tags:
         - Key: Name
           Value: !Sub ${PrefixCode}-role-secretrotation-codeserver
@@ -2042,6 +2040,13 @@ Resources:
       # https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets-required-permissions-function.html
         Version: 2012-10-17
         Statement:
+          - Effect: Allow
+            Action:
+              - logs:CreateLogGroup
+              - logs:CreateLogStream
+              - logs:PutLogEvents
+            Resource: 
+              - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${PrefixCode}-lambda-rotation-codeserver:*
           - Effect: Allow
             Action:
               - secretsmanager:DescribeSecret
