@@ -80,6 +80,7 @@ resource "aws_kms_alias" "website" {
 # Logging bucket for S3 and CloudFront logs
 resource "aws_s3_bucket" "logs" {
   bucket_prefix = "${var.PrefixCode}-logs-"
+  force_destroy = true 
 
   tags = {
     resourcetype = "storage"

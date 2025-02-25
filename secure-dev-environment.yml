@@ -75,38 +75,55 @@ Mappings:
   RegionMap:
     ap-northeast-1:
       CloudFrontPrefixList: pl-58a04531
+      ALBAccount: 582318560864
     ap-northeast-2:
       CloudFrontPrefixList: pl-22a6434b
+      ALBAccount: 600734575887
     ap-northeast-3:
       CloudFrontPrefixList: pl-31a14458
+      ALBAccount: 383597477331
     ap-south-1:
       CloudFrontPrefixList: pl-9aa247f3
+      ALBAccount: 718504428378
     ap-southeast-1:
       CloudFrontPrefixList: pl-31a34658
+      ALBAccount: 114774131450
     ap-southeast-2:
       CloudFrontPrefixList: pl-b8a742d1
+      ALBAccount: 783225319266
     ca-central-1:
       CloudFrontPrefixList: pl-38a64351
+      ALBAccount: 985666609251
     eu-central-1:
       CloudFrontPrefixList: pl-a3a144ca
+      ALBAccount: 054676820928
     eu-north-1:
       CloudFrontPrefixList: pl-fab65393
+      ALBAccount: 897822967062
     eu-west-1:
       CloudFrontPrefixList: pl-4fa04526
+      ALBAccount: 156460612806
     eu-west-2:
       CloudFrontPrefixList: pl-93a247fa
+      ALBAccount: 652711504416
     eu-west-3:
       CloudFrontPrefixList: pl-75b1541c
+      ALBAccount: 009996457667
     sa-east-1:
       CloudFrontPrefixList: pl-5da64334
+      ALBAccount: 507241528517
     us-east-1:
       CloudFrontPrefixList: pl-3b927c52
+      ALBAccount: 127311923021
     us-east-2:
       CloudFrontPrefixList: pl-b6a144df
+      ALBAccount: 033677994240
     us-west-1:
       CloudFrontPrefixList: pl-4ea04527
+      ALBAccount: 027434742980
     us-west-2:
       CloudFrontPrefixList: pl-82a045eb
+      ALBAccount: 797873946194
 
 Conditions:
   CreatePipeline: !Equals [!Ref DeployPipeline, "true"]
@@ -534,29 +551,7 @@ Resources:
           - Sid: Allow ALB logging access regions available before August 2022
             Effect: Allow
             Principal:
-              AWS: 
-                - arn:aws:iam::127311923021:root #US East (N. Virginia) 
-                - arn:aws:iam::033677994240:root #US East (Ohio)
-                - arn:aws:iam::027434742980:root #US West (N. California)
-                - arn:aws:iam::797873946194:root #US West (Oregon)
-                - arn:aws:iam::098369216593:root #Africa (Cape Town)
-                - arn:aws:iam::754344448648:root #Asia Pacific (Hong Kong)
-                - arn:aws:iam::589379963580:root #Asia Pacific (Jakarta)
-                - arn:aws:iam::718504428378:root #Asia Pacific (Mumbai)
-                - arn:aws:iam::383597477331:root #Asia Pacific (Osaka)
-                - arn:aws:iam::600734575887:root #t #Asia Pacific (Seoul)
-                - arn:aws:iam::114774131450:root #Asia Pacific (Singapore)
-                - arn:aws:iam::783225319266:root #Asia Pacific (Sydney)
-                - arn:aws:iam::582318560864:root #Asia Pacific (Tokyo) 
-                - arn:aws:iam::985666609251:root #Canada (Central) 
-                - arn:aws:iam::054676820928:root #Europe (Frankfurt)
-                - arn:aws:iam::156460612806:root #Europe (Ireland)
-                - arn:aws:iam::652711504416:root #Europe (London)
-                - arn:aws:iam::635631232127:root #Europe (Milan)
-                - arn:aws:iam::009996457667:root #Europe (Paris) 
-                - arn:aws:iam::897822967062:root #Europe (Stockholm)
-                - arn:aws:iam::076674570225:root #Middle East (Bahrain)
-                - arn:aws:iam::507241528517:root #South America (São Paulo)
+              AWS: !Sub arn:${AWS::Partition}:iam::${!FindInMap [RegionMap, !Ref 'AWS::Region', ALBAccount]}:root
             Action:
               - s3:PutObject
             Resource:
@@ -1194,7 +1189,7 @@ Resources:
               AWS: !GetAtt iamrolecodeserver.Arn
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-create
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-key
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -1203,25 +1198,10 @@ Resources:
                   - kms:CreateKey
                   - kms:ListAliases
                 Resource: "*"
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-alias
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
               - Effect: Allow
                 Action:
-                  - kms:CreateAlias
-                  - kms:DeleteAlias
-                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/*
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-kms-key
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - kms:CreateAlias
                   - kms:CreateGrant
                   - kms:Decrypt
-                  - kms:DeleteAlias
                   - kms:DescribeKey
                   - kms:EnableKeyRotation
                   - kms:GetKeyPolicy
@@ -1232,6 +1212,11 @@ Resources:
                   - kms:ScheduleKeyDeletion
                   - kms:TagResource
                 Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:key/*
+              - Effect: Allow
+                Action:
+                  - kms:CreateAlias
+                  - kms:DeleteAlias
+                Resource: !Sub arn:${AWS::Partition}:kms:${AWS::Region}:${AWS::AccountId}:alias/*
         - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-s3
           PolicyDocument:
             Version: 2012-10-17
@@ -1249,27 +1234,10 @@ Resources:
               - Effect: Allow
                 Action:
                   - cloudfront:*
-                  - wafv2:AssociateWebACL
-                  - wafv2:DisassociateWebACL
                 Resource: 
                   - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*
                   - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*
                   - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/*
-                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/*
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-cloudfront-headers
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - cloudfront:CreateResponseHeadersPolicy
-                  - cloudfront:DeleteResponseHeadersPolicy
-                  - cloudfront:GetResponseHeadersPolicy
-                  - cloudfront:UpdateResponseHeadersPolicy
-                  - cloudfront:ListTagsForResource
-                  - cloudfront:TagResource
-                  - cloudfront:UntagResource
-                Resource: !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/*
         - PolicyName: !Sub ${PrefixCode}-iampolicy-terraform-waf
           PolicyDocument:
             Version: 2012-10-17
@@ -1283,9 +1251,10 @@ Resources:
                   - wafv2:ListTagsForResource
                   - wafv2:TagResource
                   - wafv2:UntagResource
+                  - wafv2:AssociateWebACL
+                  - wafv2:DisassociateWebACL
                 Resource:
                   - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/webacl/*
-                  - !Sub arn:${AWS::Partition}:wafv2:us-east-1:${AWS::AccountId}:global/managedruleset/*/*
               - Effect: Allow
                 Action:
                   - wafv2:GetManagedRuleSet
@@ -1297,7 +1266,7 @@ Resources:
                 Action:
                   - wafv2:ListWebACLs
                 Resource: "*"
-        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2
+        - PolicyName: !Sub ${PrefixCode}-iampolicy-ec2codebuild
           PolicyDocument:
             Version: 2012-10-17
             Statement:          
@@ -1520,19 +1489,16 @@ Resources:
                 - yum-config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
                 - yum -y install terraform
                 - terraform --version
-                - ls -la
-                
+                - ls -la   
             pre_build:
               commands:
                 # Initialize Terraform using shared pipeline/state bucket
                 - cd release
-                - terraform init -backend-config="bucket=${s3bucketartifact}" -backend-config="region=${AWS::Region}"
-                
+                - terraform init -backend-config="bucket=${s3bucketartifact}" -backend-config="region=${AWS::Region}"    
             build:
               commands:
                 # Pass same variables as deploy
                 - terraform destroy -auto-approve -var="PrefixCode=${PrefixCode}" -var="Region=${AWS::Region}"
-            
             post_build:
               commands:
                 - echo "Terraform destroy completed on $(date)"
@@ -2049,18 +2015,6 @@ Resources:
             Action: sts:AssumeRole
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: SSMPermissions
-          PolicyDocument:
-            Version: 2012-10-17
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ssm:SendCommand
-                  - ssm:GetCommandInvocation
-                Resource: 
-                  - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${ec2codeserver}
-                  - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:*:document/AWS-RunShellScript
       Tags:
         - Key: Name
           Value: !Sub ${PrefixCode}-role-secretrotation-codeserver
@@ -2080,6 +2034,7 @@ Resources:
       Roles: 
         - !Ref iamrolelambda
       PolicyDocument:
+      # https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets-required-permissions-function.html
         Version: 2012-10-17
         Statement:
           - Effect: Allow
@@ -2089,9 +2044,6 @@ Resources:
               - secretsmanager:PutSecretValue
               - secretsmanager:UpdateSecretVersionStage
             Resource: !Ref secretcodeserverrotating
-            Condition:
-              StringEquals:
-                'secretsmanager:resource/AllowRotationLambdaArn': !GetAtt lambdasecretrotation.Arn
           - Effect: Allow
             Action:
               - secretsmanager:GetRandomPassword
@@ -2099,6 +2051,7 @@ Resources:
           - Effect: Allow
             Action:
               - kms:Decrypt
+              - kms:DescribeKey
               - kms:GenerateDataKey
             Resource: !GetAtt kmskey.Arn
           - Effect: Allow
@@ -2107,6 +2060,7 @@ Resources:
               - ssm:GetCommandInvocation
             Resource: 
               - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${ec2codeserver}
+              - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:*:document/AWS-RunShellScript
 Outputs:
   01CodeServerURL:
     Description: URL to access code-server through CloudFront. Open in a separate tab and then return to collect password below!
