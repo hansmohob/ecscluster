@@ -538,7 +538,6 @@ Resources:
               NumericLessThan:
                 s3:TlsVersion: 1.2
           # https://docs.aws.amazon.com/elasticloadbalancing/latest/application/enable-access-logging.html
-          # Consider limiting principle to specific region
           - Sid: Allow ALB logging access regions available as of August 2022 or later
             Effect: Allow
             Principal:
@@ -551,7 +550,14 @@ Resources:
           - Sid: Allow ALB logging access regions available before August 2022
             Effect: Allow
             Principal:
-              AWS: !Sub arn:${AWS::Partition}:iam::${!FindInMap [RegionMap, !Ref 'AWS::Region', ALBAccount]}:root
+              AWS: 
+                !Join 
+                  - ""
+                  - - "arn:"
+                    - !Ref AWS::Partition
+                    - ":iam::"
+                    - !FindInMap [RegionMap, !Ref "AWS::Region", ALBAccount]
+                    - ":root"
             Action:
               - s3:PutObject
             Resource:
