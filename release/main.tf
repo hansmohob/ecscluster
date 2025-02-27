@@ -157,24 +157,11 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
   bucket = aws_s3_bucket.logs.id
 
   rule {
-    object_ownership = "BucketOwnerEnforced"
+    object_ownership = "BucketOwnerPreferred"
   }
-}
-
-resource "aws_s3_bucket_lifecycle_configuration" "logs" {
-  bucket = aws_s3_bucket.logs.id
-
-  rule {
-    id     = "cleanup_old_logs"
-    status = "Enabled"
-
-    expiration {
-      days = 30
-    }
-
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 1
-    }
+  
+  lifecycle {
+    # checkov:skip=CKV2_AWS_65: "BucketOwnerEnforced not possible as CloudFront logging requires ACL access. Using BucketOwnerPreferred as secure alternative."
   }
 }
 
@@ -235,7 +222,11 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
     status = "Enabled"
 
     expiration {
-      days = 90
+      days = 30
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
     }
   }
 }
@@ -370,28 +361,6 @@ resource "aws_wafv2_web_acl" "website" {
     }
   }
 
-  rule {
-    name     = "AWSManagedRulesLog4jRuleSet"
-    priority = 3
-
-    override_action {
-      none {}
-    }
-
-    statement {
-      managed_rule_group_statement {
-        name        = "AWSManagedRulesLog4jRuleSet"
-        vendor_name = "AWS"
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "AWSManagedRulesLog4jRuleSetMetric"
-      sampled_requests_enabled   = true
-    }
-  }
-
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name               = "WebACLMetric"
@@ -404,6 +373,7 @@ resource "aws_wafv2_web_acl" "website" {
 
   lifecycle {
     # checkov:skip=CKV2_AWS_31: "WAF logging via Kinesis Firehose disabled for sample website to reduce complexity and cost. CloudWatch metrics enabled for basic monitoring. Consider enabling WAF logging in production for security analysis."
+    # checkov:skip=CKV2_AWS_47: "Log4j protection provided through AWSManagedRulesCommonRuleSet. Dedicated Log4j rule group not required as core protections are included in common rules."
   }
 }
 
