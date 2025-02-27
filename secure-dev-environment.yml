@@ -256,7 +256,7 @@ Resources:
                   - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/events/${PrefixCode}-vpcflowlog:*:*
                 Condition:
                   StringEquals:
-                    "aws:SourceAccount": !Sub "${AWS::AccountId}"
+                    aws:SourceAccount: !Sub "${AWS::AccountId}"
                   ArnLike:
                     "aws:SourceArn": !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:*"
       Tags:
@@ -270,6 +270,12 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: "XXXX https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-iam-role.html"
+
   vpcloggroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -603,7 +609,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       HealthCheckPath: /
-      HealthCheckPort: '8080'
+      HealthCheckPort: 8080
       Name: !Sub ${PrefixCode}-targetgroup-codeserver
       Port: 8080
       Protocol: HTTP
@@ -631,7 +637,7 @@ Resources:
           FixedResponseConfig:
             ContentType: text/plain
             MessageBody: "Access Denied"
-            StatusCode: '403'
+            StatusCode: 403
       LoadBalancerArn: !Ref albcodeserver
       Port: 80
       Protocol: HTTP
@@ -652,9 +658,9 @@ Resources:
       Conditions:
         - Field: http-header
           HttpHeaderConfig:
-            HttpHeaderName: !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderName}}'
+            HttpHeaderName: !Sub "{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderName}}"
             Values:
-              - !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderValue}}'
+              - !Sub "{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderValue}}"
       ListenerArn: !Ref alblistenercodeserver
       Priority: 1
   # Security group allows traffic only from CloudFront IP ranges
@@ -669,7 +675,7 @@ Resources:
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          SourcePrefixListId: !FindInMap [RegionMap, !Ref 'AWS::Region', CloudFrontPrefixList]
+          SourcePrefixListId: !FindInMap [RegionMap, !Ref "AWS::Region", CloudFrontPrefixList]
       SecurityGroupEgress:
         - Description: Allow to EC2
           IpProtocol: tcp
@@ -722,8 +728,8 @@ Resources:
               HTTPPort: 80
             # Add secret header to all requests to prevent direct ALB access
             OriginCustomHeaders:
-              - HeaderName: !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderName}}'
-                HeaderValue: !Sub '{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderValue}}'
+              - HeaderName: !Sub "{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderName}}"
+                HeaderValue: !Sub "{{resolve:secretsmanager:${cloudfrontsecretheadercodeserver}:SecretString:HeaderValue}}"
         DefaultCacheBehavior:
           AllowedMethods:
             - GET
@@ -927,7 +933,7 @@ Resources:
                 Resource: "*"
                 Condition:
                   StringEquals:
-                    'aws:SourceAccount': !Ref AWS::AccountId
+                    aws:SourceAccount: !Ref AWS::AccountId
         # https://docs.aws.amazon.com/systems-manager/latest/userguide/security_iam_service-with-iam.html
         - PolicyName: !Sub ${PrefixCode}-iampolicy-codeserver-SystemsManager
           PolicyDocument:
@@ -1231,6 +1237,11 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
+                  - s3:ListAllBy
+                Resource: 
+                  - "*"
+              - Effect: Allow
+                Action:
                   - s3:*
                 Resource: 
                   - !Sub arn:${AWS::Partition}:s3:::${PrefixCode}-*
@@ -1278,6 +1289,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - ec2:DescribeDhcpOptions
+                  - ec2:DescribeInstances #test aws cli commands
                   - ec2:DescribeNetworkInterfaces
                   - ec2:DescribeSubnets
                   - ec2:DescribeSecurityGroups
@@ -1814,6 +1826,7 @@ Resources:
           Value: !Sub ${EnvironmentTag}
   secretcodeserverrotationschedule:
     Type: AWS::SecretsManager::RotationSchedule
+    DependsOn: lambdasecretrotationpermission
     Condition: EnableRotation
     Properties:
       SecretId: !Ref secretcodeserverrotating
@@ -2057,13 +2070,16 @@ Resources:
           - Effect: Allow
             Action:
               - secretsmanager:GetRandomPassword
-            Resource: '*'
+            Resource: "*"
           - Effect: Allow
             Action:
               - kms:Decrypt
               - kms:DescribeKey
               - kms:GenerateDataKey
             Resource: !GetAtt kmskey.Arn
+            Condition:
+              StringEquals:
+                kms:EncryptionContext:SecretARN: !Ref secretcodeserverrotating
           - Effect: Allow
             Action:
               - ssm:SendCommand
