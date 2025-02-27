@@ -5,7 +5,6 @@ data "aws_caller_identity" "current" {}
 
 data "aws_iam_policy_document" "website_kms" {
   statement {
-    # https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html
     sid    = "Enable IAM User Permissions"
     effect = "Allow"
 
@@ -19,6 +18,9 @@ data "aws_iam_policy_document" "website_kms" {
     resources = [
       "*"
     ]
+  # checkov:skip=CKV_AWS_109: "Root account requires kms:* for key management. Additional conditions applied to CloudWatch Logs access. https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html"
+  # checkov:skip=CKV_AWS_111: "KMS key policy write access is constrained with SourceAccount, via Service and ARN conditions for CloudWatch Logs."
+  # checkov:skip=CKV_AWS_356: "Resource '*' required in KMS key policy as key ARN is not known at policy creation time. Access is constrained through conditions and actions."
   }
 
   statement {
@@ -58,6 +60,38 @@ data "aws_iam_policy_document" "website_kms" {
       values   = ["logs.${var.Region}.amazonaws.com"]
     }
   }
+
+  statement {
+    sid    = "Enable S3 Bucket Encryption"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["s3.amazonaws.com"]
+    }
+
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt"
+    ]
+
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [
+        aws_s3_bucket.website.arn,
+        aws_s3_bucket.logs.arn
+      ]
+    }
+  }
 }
 
 resource "aws_kms_key" "website" {
@@ -85,6 +119,11 @@ resource "aws_s3_bucket" "logs" {
   tags = {
     resourcetype = "storage"
   }
+
+  lifecycle {
+    # checkov:skip=CKV2_AWS_62: "Event notifications not required for logging bucket. Contents managed through lifecycle rules."
+    # checkov:skip=CKV_AWS_144: "Cross-region replication not implemented for logging bucket to reduce complexity and cost. Consider enabling for production environments if required for compliance or disaster recovery."
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "logs" {
@@ -103,11 +142,39 @@ resource "aws_s3_bucket_versioning" "logs" {
   }
 }
 
+resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.website.id
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
 resource "aws_s3_bucket_ownership_controls" "logs" {
   bucket = aws_s3_bucket.logs.id
 
   rule {
-    object_ownership = "ObjectWriter"
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "logs" {
+  bucket = aws_s3_bucket.logs.id
+
+  rule {
+    id     = "cleanup_old_logs"
+    status = "Enabled"
+
+    expiration {
+      days = 30
+    }
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
   }
 }
 
@@ -183,6 +250,7 @@ resource "aws_s3_bucket" "website" {
   lifecycle {
     # checkov:skip=CKV2_AWS_62: "Event notifications not required for static website content. Changes are managed through deployment pipeline."
     # checkov:skip=CKV_AWS_144: "Cross-region replication not required for sample website. CloudFront provides global content delivery. Consider enabling for production environments requiring disaster recovery."
+    # checkov:skip=CKV2_AWS_61: "Lifecycle configuration not required for website content bucket as objects are managed through deployment pipeline."
   }
 }
 
@@ -302,6 +370,28 @@ resource "aws_wafv2_web_acl" "website" {
     }
   }
 
+  rule {
+    name     = "AWSManagedRulesLog4jRuleSet"
+    priority = 3
+
+    override_action {
+      none {}
+    }
+
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesLog4jRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "AWSManagedRulesLog4jRuleSetMetric"
+      sampled_requests_enabled   = true
+    }
+  }
+
   visibility_config {
     cloudwatch_metrics_enabled = true
     metric_name               = "WebACLMetric"
@@ -390,5 +480,8 @@ resource "aws_cloudfront_distribution" "website" {
     # checkov:skip=CKV_AWS_310: "Consider implementing origin failover for production environments. Skipped for development to reduce complexity and cost."
     # checkov:skip=CKV2_AWS_42: "Using default CloudFront certificate for sample website. Custom SSL certificate recommended for production use with custom domain names."
     # checkov:skip=CKV_AWS_86: "CloudFront logging not implemented. S3 access logs provide sufficient monitoring for sample website. Consider implementing CloudFront logging for production environments"
+    # checkov:skip=CKV_AWS_109: "Root account requires kms:* for key management. Additional conditions applied to CloudWatch Logs access. https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html"
+    # checkov:skip=CKV_AWS_111: "KMS key policy write access is constrained with SourceAccount, via Service and ARN conditions for CloudWatch Logs."
+    # checkov:skip=CKV_AWS_356: "Resource '*' required in KMS key policy as key ARN is not known at policy creation time. Access is constrained through conditions and actions."
   }
 }
