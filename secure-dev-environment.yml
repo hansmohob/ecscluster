@@ -569,6 +569,49 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}
               - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/*
+          - Sid: Allow S3 Logging Service for git and artifact buckets
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource:
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/s3-logs/git/*
+              - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/s3-logs/pipeline/*
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub arn:${AWS::Partition}:s3:::${s3bucketgit}
+          - !If
+            # BEWARE: Inline condition for artifact bucket logging - can't be grouped due to policy structure.
+            - CreatePipeline
+            - Sid: Allow S3 Logging Service for artifact bucket
+              Effect: Allow
+              Principal:
+                Service: logging.s3.amazonaws.com
+              Action: s3:PutObject
+              Resource:
+                - !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/s3-logs/pipeline/*
+              Condition:
+                StringEquals:
+                  aws:SourceAccount: !Ref AWS::AccountId
+                ArnLike:
+                  aws:SourceArn:
+                    - !Sub arn:${AWS::Partition}:s3:::${s3bucketartifact}
+            - !Ref AWS::NoValue
+          - Sid: Allow ALB Logging
+            Effect: Allow
+            Principal:
+              AWS: !Join 
+                - ""
+                - - "arn:"
+                  - !Ref AWS::Partition
+                  - ":iam::"
+                  - !FindInMap [RegionMap, !Ref "AWS::Region", ALBAccount]
+                  - ":root"
+            Action: s3:PutObject
+            Resource: !Sub arn:${AWS::Partition}:s3:::${s3bucketlogs}/alb-logs/*
 
   ### Access Layer - ALB and CloudFront distribution for secure access to code-server
   albcodeserver:
@@ -605,6 +648,10 @@ Resources:
         rules_to_suppress:
           - id: CKV_AWS_131
             reason: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
+      checkov:
+        skip:
+          - id: CKV_AWS_131
+            comment: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
   albtargetgroupcodeserver:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -642,12 +689,16 @@ Resources:
       Port: 80
       Protocol: HTTP
     Metadata:
-        cfn_nag:
-          rules_to_suppress:
-            - id: W56
-              reason: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
-            - id: CKV_AWS_103
-              reason: "TLS check not applicable - ALB uses HTTP internally. External TLS 1.2 enforced at CloudFront. Consider end-to-end HTTPS if required."
+      cfn_nag:
+        rules_to_suppress:
+          - id: W56
+            reason: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
+          - id: CKV_AWS_103
+            reason: "TLS check not applicable - ALB uses HTTP internally. External TLS 1.2 enforced at CloudFront. Consider end-to-end HTTPS if required."
+      checkov:
+        skip:
+          - id: CKV_AWS_2
+            comment: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
   # Allow traffic only if secret header from CloudFront is present
   alblistenerrulecodeserver:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
@@ -767,8 +818,16 @@ Resources:
             reason: "Origin uses HTTP within AWS network. Consider end-to-end HTTPS if certificate management overhead is acceptable."
           - id: CKV_AWS_174
             reason: "Using CloudFront default certificate with TLS 1.2. Consider custom certificate if custom domain required."
-          - id: CKV_AWS_68
+          - id: [AwsSolutions-CFR2, CKV_AWS_68]
             reason: "Security handled by CloudFront origin header, IP restrictions and ALB rules. WAF needs us-east-1 deployment. Consider using StackSets for WAF if required"
+          - id: AwsSolutions-CFR1
+            reason: "Geo-restrictions not implemented for flexibility. Consider enabling geo-restrictions if regional compliance or security requirements dictate."
+      checkov:
+        skip:
+          - id: CKV_AWS_174
+            comment: "Using CloudFront default certificate with TLS 1.2. Consider custom certificate if custom domain required."
+          - id: CKV_AWS_68
+            comment: "WAF not implemented for development environment. Security handled through CloudFront origin verification and code-server authentication. Consider WAF for production."
   cloudfrontsecretheadercodeserver:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -853,8 +912,8 @@ Resources:
     Metadata:
       cfn_nag:
         rules_to_suppress:
-          - id: W77
-            reason: "Secret used for code-server authentication. Security handled through CloudFront and ALB controls. Consider implementing Lambda-based rotation mechanism if required."
+          - id: AwsSolutions-SMG4
+            reason: "Secret rotation is optional and controlled via RotateSecret parameter. When enabled, rotation is handled by Lambda function."
 
   ### Source Control Storage - S3 bucket configured as a git remote for version control, acting as a serverless git repository with encryption and access controls
   s3bucketgit:
@@ -1344,6 +1403,9 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      LoggingConfiguration:
+        DestinationBucketName: !Ref s3bucketlogs
+        LogFilePrefix: s3-logs/pipeline/
       VersioningConfiguration:
         Status: Enabled
       Tags:
@@ -1607,6 +1669,11 @@ Resources:
           Value: security
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: "Pipeline role policies scoped to specific resources. Wildcards required for S3 object access and KMS operations."
   # Terrafrom apply pipeline
   pipelinebuild:
     Type: AWS::CodePipeline::Pipeline
@@ -1843,7 +1910,7 @@ Resources:
       FunctionName: !Sub ${PrefixCode}-lambda-rotation-codeserver
       Handler: index.lambda_handler
       KmsKeyArn: !GetAtt kmskey.Arn
-      Runtime: python3.9
+      Runtime: python3.12
       Timeout: 300
       MemorySize: 128
       Role: !GetAtt iamrolelambda.Arn
@@ -2012,6 +2079,11 @@ Resources:
           Value: compute
         - Key: environment
           Value: !Sub ${EnvironmentTag}
+    Metadata:
+      checkov:
+        skip:
+          - id: CKV_SECRET_6
+            comment: "False positive - detecting event token and generated password variables in Lambda rotation function. No hardcoded secrets present."
   lambdasecretrotationpermission:
     Type: AWS::Lambda::Permission
     Condition: EnableRotation
@@ -2050,7 +2122,6 @@ Resources:
       Roles: 
         - !Ref iamrolelambda
       PolicyDocument:
-      # https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets-required-permissions-function.html
         Version: 2012-10-17
         Statement:
           - Effect: Allow
@@ -2087,6 +2158,13 @@ Resources:
             Resource: 
               - !Sub arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${ec2codeserver}
               - !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:*:document/AWS-RunShellScript
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            reason: >
+              Lambda rotation role requires CloudWatch Logs and SSM document access. Wildcards scoped to specific log groups and SSM RunShellScript document. 
+              Refer to https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets-required-permissions-function.html
 Outputs:
   01CodeServerURL:
     Description: URL to access code-server through CloudFront. Open in a separate tab and then return to collect password below!
