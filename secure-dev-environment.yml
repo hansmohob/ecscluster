@@ -24,7 +24,6 @@ Metadata:
           - PrefixCode
           - SolutionTag
           - EnvironmentTag
-
 Parameters:
   VpcCidr:
     Type: String
@@ -130,7 +129,6 @@ Conditions:
   EnableRotation: !Equals [!Ref RotateSecret, "true"]
 
 Resources:
-
   ### Resource Group - Groups all AWS resources for easy management and tracking
   resourcegroup:
     Type: AWS::ResourceGroups::Group
@@ -275,7 +273,6 @@ Resources:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
             reason: "XXXX https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs-iam-role.html"
-
   vpcloggroup:
     Type: AWS::Logs::LogGroup
     Properties:
