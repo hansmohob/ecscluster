@@ -862,6 +862,10 @@ Resources:
             reason: "Secret is a static verification token between CloudFront and ALB. Rotation would require coordinated updates to both services causing downtime. Consider automated rotation if required."
           - id: AwsSolutions-SMG4
             reason: "Secret is a static verification token between CloudFront and ALB. Rotation would require coordinated updates to both services causing downtime. Consider automated rotation if required."
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-SMG4
+            reason: "Secret is a static verification token between CloudFront and ALB. Rotation would require coordinated updates to both services causing downtime. Consider automated rotation if required."
   securitygroupcodeserver:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -918,6 +922,10 @@ Resources:
           Value: !Sub ${EnvironmentTag}
     Metadata:
       cfn_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-SMG4
+            reason: "This is the initial deployment secret only. For automated rotation, enable the RotateSecret parameter which creates and uses secretcodeserverrotating instead."
+      cdk_nag:
         rules_to_suppress:
           - id: AwsSolutions-SMG4
             reason: "This is the initial deployment secret only. For automated rotation, enable the RotateSecret parameter which creates and uses secretcodeserverrotating instead."
