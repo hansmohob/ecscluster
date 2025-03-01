@@ -824,7 +824,9 @@ Resources:
             reason: "Origin uses HTTP within AWS network. Consider end-to-end HTTPS if certificate management overhead is acceptable."
           - id: CKV_AWS_174
             reason: "Using CloudFront default certificate with TLS 1.2. Consider custom certificate if custom domain required."
-          - id: [AwsSolutions-CFR2, CKV_AWS_68]
+          - id: AwsSolutions-CFR2
+            reason: "Security handled by CloudFront origin header, IP restrictions and ALB rules. WAF needs us-east-1 deployment. Consider using StackSets for WAF if required"
+          - id: CKV_AWS_68
             reason: "Security handled by CloudFront origin header, IP restrictions and ALB rules. WAF needs us-east-1 deployment. Consider using StackSets for WAF if required"
           - id: AwsSolutions-CFR1
             reason: "Geo-restrictions not implemented for flexibility. Consider enabling geo-restrictions if regional compliance or security requirements dictate."
@@ -1378,6 +1380,10 @@ Resources:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
             reason: "Role scoped to prefix-matched S3 buckets and account-specific resources. Wildcard required for EC2/CodeBuild networking. Consider further restrictions if required."
+      cfn_nag:
+        rules_to_suppress:
+          - id: F3
+            reason: "Developer role requires broad permissions for infrastructure deployment. Scoped to specific resources and account. Consider further restrictions if required."
   # Policy allowing code-server user to assume the developer role
   iamrolepolicyassumedeveloper:
     Type: AWS::IAM::Policy
