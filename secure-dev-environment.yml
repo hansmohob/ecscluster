@@ -859,7 +859,9 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: W77
-            reason: "Secret used for CloudFront-ALB origin verification. Rotation requires CloudFront/ALB updates. Consider automated rotation if required."
+            reason: "Secret is a static verification token between CloudFront and ALB. Rotation would require coordinated updates to both services causing downtime. Consider automated rotation if required."
+          - id: AwsSolutions-SMG4
+            reason: "Secret is a static verification token between CloudFront and ALB. Rotation would require coordinated updates to both services causing downtime. Consider automated rotation if required."
   securitygroupcodeserver:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -918,7 +920,7 @@ Resources:
       cfn_nag:
         rules_to_suppress:
           - id: AwsSolutions-SMG4
-            reason: "Secret rotation is optional and controlled via RotateSecret parameter. When enabled, rotation is handled by Lambda function."
+            reason: "This is the initial deployment secret only. For automated rotation, enable the RotateSecret parameter which creates and uses secretcodeserverrotating instead."
 
   ### Source Control Storage - S3 bucket configured as a git remote for version control, acting as a serverless git repository with encryption and access controls
   s3bucketgit:
@@ -1683,6 +1685,14 @@ Resources:
         rules_to_suppress:
           - id: AwsSolutions-IAM5
             reason: "Pipeline role policies scoped to specific resources. Wildcards required for S3 object access and KMS operations."
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            appliesTo:
+              - "Resource::arn:<AWS::Partition>:s3:::<s3bucketgit>/*"
+              - "Resource::arn:<AWS::Partition>:s3:::<s3bucketartifact>/*"
+              - "Action::kms:ReEncrypt*"
+            reason: "Pipeline role requires S3 object-level and KMS permissions. Access scoped to specific buckets and KMS key."
   # Terrafrom apply pipeline
   pipelinebuild:
     Type: AWS::CodePipeline::Pipeline
@@ -2089,6 +2099,10 @@ Resources:
         - Key: environment
           Value: !Sub ${EnvironmentTag}
     Metadata:
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-L1
+            reason: "Using latest supported Python runtime (3.12). Will be updated when new versions are available."
       checkov:
         skip:
           - id: CKV_SECRET_6
@@ -2174,6 +2188,14 @@ Resources:
             reason: >
               Lambda rotation role requires CloudWatch Logs and SSM document access. Wildcards scoped to specific log groups and SSM RunShellScript document. 
               Refer to https://docs.aws.amazon.com/secretsmanager/latest/userguide/rotating-secrets-required-permissions-function.html
+      cdk_nag:
+        rules_to_suppress:
+          - id: AwsSolutions-IAM5
+            appliesTo:
+              - "Resource::arn:<AWS::Partition>:logs:<AWS::Region>:<AWS::AccountId>:log-group:/aws/lambda/<PrefixCode>-lambda-rotation-codeserver:*"
+              - "Resource::*"
+              - "Resource::arn:<AWS::Partition>:ssm:<AWS::Region>:*:document/AWS-RunShellScript"
+            reason: "Lambda requires CloudWatch Logs access and SSM RunShellScript document permissions. GetRandomPassword requires * resource."
 Outputs:
   01CodeServerURL:
     Description: URL to access code-server through CloudFront. Open in a separate tab and then return to collect password below!
