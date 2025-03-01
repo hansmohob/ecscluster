@@ -515,6 +515,10 @@ Resources:
         rules_to_suppress:
           - id: W35
             reason: "This is an access logs bucket and does not need its own access logging."
+      checkov:
+        skip:
+          - id: CKV_AWS_18
+            comment: "This is an access logs bucket and does not need its own access logging."
   s3bucketpolicylogs:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -699,6 +703,8 @@ Resources:
         skip:
           - id: CKV_AWS_2
             comment: "ALB uses HTTP for internal AWS traffic. Security handled by CloudFront HTTPS and origin verification. Consider end-to-end HTTPS if required."
+          - id: CKV_AWS_103
+            comment: "TLS check not applicable - ALB uses HTTP internally. External TLS 1.2 enforced at CloudFront. Consider end-to-end HTTPS if required."
   # Allow traffic only if secret header from CloudFront is present
   alblistenerrulecodeserver:
     Type: AWS::ElasticLoadBalancingV2::ListenerRule
