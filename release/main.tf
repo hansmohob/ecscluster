@@ -453,5 +453,6 @@ resource "aws_cloudfront_distribution" "website" {
     # checkov:skip=CKV_AWS_109: "Root account requires kms:* for key management. Additional conditions applied to CloudWatch Logs access. https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html"
     # checkov:skip=CKV_AWS_111: "KMS key policy write access is constrained with SourceAccount, via Service and ARN conditions for CloudWatch Logs."
     # checkov:skip=CKV_AWS_356: "Resource '*' required in KMS key policy as key ARN is not known at policy creation time. Access is constrained through conditions and actions."
+    # checkov:skip=CKV2_AWS_47: "Log4j protection provided through AWSManagedRulesCommonRuleSet. Dedicated Log4j rule group not required as core protections are included in common rules."
   }
 }
