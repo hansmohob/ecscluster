@@ -17,7 +17,10 @@ Metadata:
       - Label:
           default: Compute settings
         Parameters:
-          - AMICodeServer
+          - InstanceArchitecture
+          - InstanceType
+          - AMIx86CodeServer
+          - AMIArmCodeServer
       - Label:
           default: Tagging and Naming
         Parameters:
@@ -51,10 +54,25 @@ Parameters:
     Type: String
     Default: 4.97.2
     Description: Version of code-server to install. See available versions at github.com/coder/code-server/releases
-  AMICodeServer:
+  InstanceArchitecture:
+    Type: String
+    Default: arm64
+    AllowedValues:
+      - amd64
+      - arm64
+    Description: Choose amd64 for AMD/Intel instances or arm64 for Graviton instances
+  InstanceType:
+    Type: String
+    Default: t4g.large
+    Description: EC2 instance type MUST match architecture. amd64= t3.small, t3a.large, c6i.xlarge, m6a.2xlarge, etc. arm64= t4g.large, c7g.xlarge, m6g.2xlarge, etc.Template will fail if mismatched.
+  AMIx86CodeServer:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-    Description: SSM parameter path for latest Amazon Linux 2023 AMI in current region
+    Description: SSM parameter path for x86_64 AMI (used for AMD/Intel instances)
+  AMIArmCodeServer:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: SSM parameter path for arm64 AMI (used for Graviton instances)
   PrefixCode:
     Type: String
     Default: devbox
@@ -127,6 +145,7 @@ Mappings:
 Conditions:
   CreatePipeline: !Equals [!Ref DeployPipeline, "true"]
   EnableRotation: !Equals [!Ref RotateSecret, "true"]
+  IsArm64: !Equals [!Ref InstanceArchitecture, 'arm64']
 
 Resources:
   ### Resource Group - Groups all AWS resources for easy management and tracking
@@ -1106,8 +1125,8 @@ Resources:
   ec2codeserver:
     Type: AWS::EC2::Instance
     Properties:
-      ImageId: !Ref AMICodeServer
-      InstanceType: t3a.xlarge
+      ImageId: !If [IsArm64, !Ref AMIArmCodeServer, !Ref AMIx86CodeServer]
+      InstanceType: !Ref InstanceType
       KeyName: !Ref ec2keypaircodeserver
       SubnetId: !Ref subnetprivate01
       IamInstanceProfile: !Ref iaminstanceprofilecodeserver
@@ -1153,7 +1172,7 @@ Resources:
 
           #### START: CODE-SERVER BOOTSTRAP ####
           echo "INFO: Installing code-server version ${CodeServerVersion}..."
-          dnf install https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-amd64.rpm -y
+          dnf install https://github.com/coder/code-server/releases/download/v${CodeServerVersion}/code-server-${CodeServerVersion}-${InstanceArchitecture}.rpm -y
 
           echo "INFO: Configuring code-server"
           mkdir -p /home/ec2-user/.config/code-server
