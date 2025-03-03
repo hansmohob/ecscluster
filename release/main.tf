@@ -1,6 +1,6 @@
 # Sample website hosted on Amazon S3 with CloudFront distribution and WAF protection
 
-# KMS key for encrypting S3 bucket contents
+### KMS - Central encryption key for website bucket contents and CloudWatch Logs
 data "aws_caller_identity" "current" {}
 
 data "aws_iam_policy_document" "website_kms" {
@@ -111,7 +111,7 @@ resource "aws_kms_alias" "website" {
   target_key_id = aws_kms_key.website.key_id
 }
 
-# Logging bucket for S3 and CloudFront logs
+### Logging Infrastructure - S3 bucket for CloudFront and S3 access logs with encryption and lifecycle rules
 resource "aws_s3_bucket" "logs" {
   bucket_prefix = "${var.PrefixCode}-logs-"
   force_destroy = true 
@@ -147,8 +147,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "logs" {
 
   rule {
     apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.website.id
-      sse_algorithm     = "aws:kms"
+      sse_algorithm = "AES256"
     }
   }
 }
@@ -157,7 +156,7 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
   bucket = aws_s3_bucket.logs.id
 
   rule {
-    object_ownership = "BucketOwnerPreferred"
+    object_ownership = "ObjectWriter"
   }
   
   lifecycle {
@@ -168,7 +167,6 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
 # Enable logging on website bucket
 resource "aws_s3_bucket_logging" "website" {
   bucket = aws_s3_bucket.website.id
-
   target_bucket = aws_s3_bucket.logs.id
   target_prefix = "s3-logs/"
 }
@@ -208,6 +206,29 @@ resource "aws_s3_bucket_policy" "logs" {
             "s3:TlsVersion" = 1.2
           }
         }
+      },
+      {
+        Sid       = "AllowCloudFrontLogs"
+        Effect    = "Allow"
+        Principal = {
+          Service = "cloudfront.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.logs.arn}/cloudfront-logs/*"
+      },
+      {
+        Sid       = "AllowS3LoggingService"
+        Effect    = "Allow"
+        Principal = {
+          Service = "logging.s3.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "${aws_s3_bucket.logs.arn}/s3-logs/*"
+        Condition = {
+          StringEquals = {
+            "aws:SourceAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
       }
     ]
   })
@@ -231,7 +252,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "logs" {
   }
 }
 
-# S3 bucket to store website content
+### Website Content - S3 bucket configured with CloudFront Origin Access Control for secure content delivery
 resource "aws_s3_bucket" "website" {
   bucket_prefix = "${var.PrefixCode}-s3-website-"
 
@@ -306,6 +327,7 @@ resource "aws_s3_bucket_policy" "website" {
   })
 }
 
+### Access Layer - CloudFront distribution with WAF protection and security headers
 # WAF web ACL to protect CloudFront distribution
 resource "aws_wafv2_web_acl" "website" {
   provider    = aws.us-east-1
@@ -377,7 +399,7 @@ resource "aws_wafv2_web_acl" "website" {
   }
 }
 
-# Security headers policy for CloudFront responses
+# Security headers policy for CloudFront responses (HSTS, CSP)
 resource "aws_cloudfront_response_headers_policy" "security_headers" {
   name    = "${var.PrefixCode}-cloudfrontheaders-website"
   comment = "Security headers policy"
@@ -396,7 +418,7 @@ resource "aws_cloudfront_response_headers_policy" "security_headers" {
   }
 }
 
-# CloudFront distribution for content delivery
+# CloudFront distribution for secure content delivery with logging enabled
 resource "aws_cloudfront_distribution" "website" {
   enabled             = true
   default_root_object = "index.html"
