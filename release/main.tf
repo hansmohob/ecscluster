@@ -123,6 +123,7 @@ resource "aws_s3_bucket" "logs" {
   lifecycle {
     # checkov:skip=CKV2_AWS_62: "Event notifications not required for logging bucket. Contents managed through lifecycle rules."
     # checkov:skip=CKV_AWS_144: "Cross-region replication not implemented for logging bucket to reduce complexity and cost. Consider enabling for production environments if required for compliance or disaster recovery."
+    # checkov:skip=CKV_AWS_145: "Using AES256 instead of KMS encryption as required by CloudFront and S3 logging services. KMS encryption is not supported for logging buckets."
   }
 }
 
