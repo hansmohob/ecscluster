@@ -1,0 +1,12 @@
+{
+    "extension": ".pdf",
+    "days": 1000,
+    "aws_bucket": "sourceaws-513395669397",
+    "oracle_bucket": "ocid1.tenancy.oc1..aaaaaaaaduvna3gkcsel5uza66gxx42qyg2bghbkqkqymalem7fxzsxudquq",
+    "oracle_endpoint_url": "https://bling.compat.objectstorage.ap-hyderabad-1.oraclecloud.com",
+    "oracle_region": "ap-hyderabad-1",
+    "oracle_access_key_id": "<enter the oracle api usage oracle_secret_access_key>",
+    "oracle_secret_access_secret": "<enter the oracle api usage oracle_secret_access_secret>",
+    "oracle_secret_name": "oci-secrets",
+    "dynamodb_table_name": "COPYOPERATIONS"
+  }
