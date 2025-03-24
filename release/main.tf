@@ -18,9 +18,9 @@ data "aws_iam_policy_document" "website_kms" {
     resources = [
       "*"
     ]
-  # checkov:skip=CKV_AWS_109: "Root account requires kms:* for key management. Additional conditions applied to CloudWatch Logs access. https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html"
-  # checkov:skip=CKV_AWS_111: "KMS key policy write access is constrained with SourceAccount, via Service and ARN conditions for CloudWatch Logs."
-  # checkov:skip=CKV_AWS_356: "Resource '*' required in KMS key policy as key ARN is not known at policy creation time. Access is constrained through conditions and actions."
+    # checkov:skip=CKV_AWS_109: "Root account requires kms:* for key management. Additional conditions applied to CloudWatch Logs access. https://docs.aws.amazon.com/kms/latest/developerguide/key-policy-overview.html"
+    # checkov:skip=CKV_AWS_111: "KMS key policy write access is constrained with SourceAccount, via Service and ARN conditions for CloudWatch Logs."
+    # checkov:skip=CKV_AWS_356: "Resource '*' required in KMS key policy as key ARN is not known at policy creation time. Access is constrained through conditions and actions."
   }
 
   statement {
@@ -86,7 +86,7 @@ data "aws_iam_policy_document" "website_kms" {
     condition {
       test     = "ArnLike"
       variable = "aws:SourceArn"
-      values   = [
+      values = [
         aws_s3_bucket.website.arn,
         aws_s3_bucket.logs.arn
       ]
@@ -98,7 +98,7 @@ resource "aws_kms_key" "website" {
   description             = "KMS key for website bucket encryption"
   deletion_window_in_days = 7
   enable_key_rotation     = true
-  policy                 = data.aws_iam_policy_document.website_kms.json
+  policy                  = data.aws_iam_policy_document.website_kms.json
 
   tags = {
     Name         = "${var.PrefixCode}-kms-website"
@@ -114,7 +114,7 @@ resource "aws_kms_alias" "website" {
 ### Logging Infrastructure - S3 bucket for CloudFront and S3 access logs with encryption and lifecycle rules
 resource "aws_s3_bucket" "logs" {
   bucket_prefix = "${var.PrefixCode}-logs-"
-  force_destroy = true 
+  force_destroy = true
 
   tags = {
     resourcetype = "storage"
@@ -159,7 +159,7 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
   rule {
     object_ownership = "ObjectWriter"
   }
-  
+
   lifecycle {
     # checkov:skip=CKV2_AWS_65: "BucketOwnerEnforced not possible as CloudFront logging requires ACL access. Using BucketOwnerPreferred as secure alternative."
   }
@@ -167,7 +167,7 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
 
 # Enable logging on website bucket
 resource "aws_s3_bucket_logging" "website" {
-  bucket = aws_s3_bucket.website.id
+  bucket        = aws_s3_bucket.website.id
   target_bucket = aws_s3_bucket.logs.id
   target_prefix = "s3-logs/"
 }
@@ -183,7 +183,7 @@ resource "aws_s3_bucket_policy" "logs" {
         Effect    = "Deny"
         Principal = "*"
         Action    = "s3:*"
-        Resource  = [
+        Resource = [
           "${aws_s3_bucket.logs.arn}",
           "${aws_s3_bucket.logs.arn}/*"
         ]
@@ -198,7 +198,7 @@ resource "aws_s3_bucket_policy" "logs" {
         Effect    = "Deny"
         Principal = "*"
         Action    = "s3:*"
-        Resource  = [
+        Resource = [
           "${aws_s3_bucket.logs.arn}",
           "${aws_s3_bucket.logs.arn}/*"
         ]
@@ -209,8 +209,8 @@ resource "aws_s3_bucket_policy" "logs" {
         }
       },
       {
-        Sid       = "AllowCloudFrontLogs"
-        Effect    = "Allow"
+        Sid    = "AllowCloudFrontLogs"
+        Effect = "Allow"
         Principal = {
           Service = "cloudfront.amazonaws.com"
         }
@@ -218,8 +218,8 @@ resource "aws_s3_bucket_policy" "logs" {
         Resource = "${aws_s3_bucket.logs.arn}/cloudfront-logs/*"
       },
       {
-        Sid       = "AllowS3LoggingService"
-        Effect    = "Allow"
+        Sid    = "AllowS3LoggingService"
+        Effect = "Allow"
         Principal = {
           Service = "logging.s3.amazonaws.com"
         }
@@ -311,8 +311,8 @@ resource "aws_s3_bucket_policy" "website" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "AllowCloudFrontAccess"
-        Effect    = "Allow"
+        Sid    = "AllowCloudFrontAccess"
+        Effect = "Allow"
         Principal = {
           Service = "cloudfront.amazonaws.com"
         }
@@ -357,8 +357,8 @@ resource "aws_wafv2_web_acl" "website" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name               = "AWSManagedRulesCommonRuleSetMetric"
-      sampled_requests_enabled  = true
+      metric_name                = "AWSManagedRulesCommonRuleSetMetric"
+      sampled_requests_enabled   = true
     }
   }
 
@@ -379,15 +379,15 @@ resource "aws_wafv2_web_acl" "website" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name               = "AWSManagedRulesKnownBadInputsRuleSetMetric"
-      sampled_requests_enabled  = true
+      metric_name                = "AWSManagedRulesKnownBadInputsRuleSetMetric"
+      sampled_requests_enabled   = true
     }
   }
 
   visibility_config {
     cloudwatch_metrics_enabled = true
-    metric_name               = "WebACLMetric"
-    sampled_requests_enabled  = true
+    metric_name                = "WebACLMetric"
+    sampled_requests_enabled   = true
   }
 
   tags = {
@@ -423,11 +423,11 @@ resource "aws_cloudfront_response_headers_policy" "security_headers" {
 resource "aws_cloudfront_distribution" "website" {
   enabled             = true
   default_root_object = "index.html"
-  web_acl_id         = aws_wafv2_web_acl.website.arn
+  web_acl_id          = aws_wafv2_web_acl.website.arn
 
   origin {
     domain_name              = aws_s3_bucket.website.bucket_regional_domain_name
-    origin_id               = "S3Origin"
+    origin_id                = "S3Origin"
     origin_access_control_id = aws_cloudfront_origin_access_control.website.id
   }
 
@@ -441,28 +441,24 @@ resource "aws_cloudfront_distribution" "website" {
   default_cache_behavior {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
-    target_origin_id          = "S3Origin"
-    viewer_protocol_policy    = "redirect-to-https"
+    target_origin_id           = "S3Origin"
+    viewer_protocol_policy     = "redirect-to-https"
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security_headers.id
-
-    forwarded_values {
-      query_string = false
-      cookies {
-        forward = "none"
-      }
-    }
+    cache_policy_id            = "658327ea-f89d-4fab-a63d-7e88639e58f6" # CachingOptimized policy
+    origin_request_policy_id   = "88a5eaf4-2fd4-4709-b370-b4c650ea3fcf" # CORS-S3Origin policy
   }
 
   restrictions {
     geo_restriction {
       restriction_type = length(var.GeoRestriction) > 0 ? "whitelist" : "none"
-      locations       = var.GeoRestriction
+      locations        = var.GeoRestriction
     }
   }
 
   viewer_certificate {
     cloudfront_default_certificate = true
     minimum_protocol_version       = "TLSv1.2_2021"
+    ssl_support_method             = "sni-only"
   }
 
   tags = {
