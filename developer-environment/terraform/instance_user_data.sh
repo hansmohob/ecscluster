@@ -115,42 +115,36 @@ su - ec2-user -c "git config --global init.defaultBranch main"
 # Define repo to bucket mappings
 WORKSPACE="/home/ec2-user/workspace"
 declare -A REPO_BUCKETS=(
-  ["my-workspace"]="${git_bucket_main}"
+  ["developer-environment"]="${git_bucket_main}"
   ["eks-infrastructure"]="${git_bucket_eks-infrastructure}"
   ["platform-config"]="${git_bucket_platform-config}"
   ["service-layer"]="${git_bucket_service-layer}"
 )
-
 # Create workspace directory
 mkdir -p $WORKSPACE
 chown ec2-user:ec2-user $WORKSPACE
-
-# Setup each repository
+# Clone GitHub repo to a temporary location
+TEMP_DIR=$(mktemp -d)
+su - ec2-user -c "git clone ${github_repo} $TEMP_DIR"
+# Setup each repo
 for repo_name in "$${!REPO_BUCKETS[@]}"; do
   echo "INFO: Setting up repository: $repo_name"
   bucket_name=$${REPO_BUCKETS[$repo_name]}
   
-  if [ -n "${s3_asset_bucket}" ]; then
-    echo "INFO: Initializing from S3 assets..."
-    su - ec2-user -r -c "mkdir -p $WORKSPACE/$repo_name && \
-                      cd $WORKSPACE/$repo_name && \
-                      aws s3 cp --recursive s3://${s3_asset_bucket}/${s3_asset_prefix}/$repo_name ./ && \
-                      git init && \
-                      git add . && \
-                      git commit -m 'Initial commit from S3 assets' && \
-                      git remote add origin s3+zip://$bucket_name/my-workspace && \
-                      git push -u origin main"
-  else
-    echo "INFO: Cloning from GitHub..."
-    su - ec2-user -c "cd $WORKSPACE && \
-                      git clone ${github_repo} $repo_name && \
-                      cd $repo_name && \
-                      git remote remove origin && \
-                      git remote add origin s3+zip://$bucket_name/my-workspace && \
-                      git push -u origin main"
-  fi
+  su - ec2-user -c "mkdir -p $WORKSPACE/$repo_name && \
+                    cd $WORKSPACE/$repo_name && \
+                    cp -r $TEMP_DIR/$repo_name/* . && \
+                    cp -r $TEMP_DIR/$repo_name/.* . 2>/dev/null || true && \
+                    git init && \
+                    git add . && \
+                    git commit -m 'Initial commit' && \
+                    git remote add origin s3+zip://$bucket_name/my-workspace && \
+                    git push -u origin main"
+  
   echo "INFO: Repository setup complete for: $repo_name"
 done
+# Clean up temp directory
+rm -rf $TEMP_DIR
 #### END: GIT-REMOTE-S3 BOOTSTRAP ####
 
 #### START: SET DEVELOPER PROFILE AS DEFAULT ####
