@@ -115,7 +115,7 @@ su - ec2-user -c "git config --global init.defaultBranch main"
 # Define repo to bucket mappings
 WORKSPACE="/home/ec2-user/workspace"
 declare -A REPO_BUCKETS=(
-  ["developer-environment"]="${git_bucket_main}"
+  ["developer-environment"]="${git_bucket_developer-environment}"
   ["eks-infrastructure"]="${git_bucket_eks-infrastructure}"
   ["platform-config"]="${git_bucket_platform-config}"
   ["service-layer"]="${git_bucket_service-layer}"

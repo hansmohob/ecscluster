@@ -749,7 +749,7 @@ module "git_repo_main" {
   prefix_code    = var.prefix_code
   kms_key_arn    = aws_kms_key.main.arn
   logs_bucket_id = aws_s3_bucket.logs.id
-  name           = "main"
+  name           = "developer-environment"
 }
 
 resource "aws_iam_role_policy_attachment" "devbox_repo" {
@@ -1037,20 +1037,20 @@ resource "aws_instance" "code_server" {
   }
 
   user_data = base64encode(templatefile("${path.module}/instance_user_data.sh", {
-    prefix                        = var.prefix_code
-    region                        = var.region
-    code_server_version           = var.code_server_version
-    instance_arch                 = var.instance_architecture
-    secret_id                     = aws_secretsmanager_secret.code_server.id
-    auto_set_profile              = var.auto_set_developer_profile
-    account_id                    = data.aws_caller_identity.current.account_id
-    github_repo                   = var.github_repo
-    s3_asset_bucket               = var.s3_asset_bucket
-    s3_asset_prefix               = var.s3_asset_prefix
-    git_bucket_main               = module.git_repo_main.bucket_name
-    git_bucket_eks-infrastructure = module.git_repo_eks-infrastructure.bucket_name
-    git_bucket_platform-config    = module.git_repo_platform-config.bucket_name
-    git_bucket_service-layer      = module.git_repo_service-layer.bucket_name
+    prefix                           = var.prefix_code
+    region                           = var.region
+    code_server_version              = var.code_server_version
+    instance_arch                    = var.instance_architecture
+    secret_id                        = aws_secretsmanager_secret.code_server.id
+    auto_set_profile                 = var.auto_set_developer_profile
+    account_id                       = data.aws_caller_identity.current.account_id
+    github_repo                      = var.github_repo
+    s3_asset_bucket                  = var.s3_asset_bucket
+    s3_asset_prefix                  = var.s3_asset_prefix
+    git_bucket_developer-environment = module.git_repo_developer-environment.bucket_name
+    git_bucket_eks-infrastructure    = module.git_repo_eks-infrastructure.bucket_name
+    git_bucket_platform-config       = module.git_repo_platform-config.bucket_name
+    git_bucket_service-layer         = module.git_repo_service-layer.bucket_name
   }))
 
   tags = {
