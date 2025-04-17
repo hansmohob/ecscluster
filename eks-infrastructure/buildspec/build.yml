@@ -8,6 +8,7 @@ phases:
       - terraform --version
   pre_build:
     commands:
+      - cd buildspec
       - terraform init -backend-config="bucket=${bucket}" -backend-config="region=${region}"
   build:
     commands:
