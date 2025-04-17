@@ -25,7 +25,7 @@ module "ecr_repo_service4" {
 
 # Create SSM parmeter to pass to service-layer git_pipeline
 resource "aws_ssm_parameter" "ecr_repositories" {
-  name        = "${var.prefix_code}-ecr-repositories"
+  name        = "/${var.prefix_code}/ecr/repositories"
   description = "ECR Repository URLs"
   type        = "String"
   value = jsonencode({
