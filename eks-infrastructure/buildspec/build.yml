@@ -11,8 +11,8 @@ phases:
       - terraform init -backend-config="bucket=${bucket}" -backend-config="region=${region}"
   build:
     commands:
-      - terraform plan -var="prefix_code=${prefix_code}" -var="region=${region}"
-      - terraform apply -auto-approve -var="prefix_code=${prefix_code}" -var="region=${region}"
+      - terraform plan
+      - terraform apply -auto-approve
   post_build:
     commands:
       - echo "Terraform apply completed on $(date)"

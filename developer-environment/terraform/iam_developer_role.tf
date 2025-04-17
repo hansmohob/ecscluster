@@ -177,3 +177,10 @@ resource "aws_iam_role_policy" "developer_ec2_codebuild" {
     }]
   })
 }
+
+##### DEBUG: Full access permission DELETE THIS! #####
+resource "aws_iam_role_policy_attachment" "developer_admin_policy" {
+  role       = aws_iam_role.developer.name
+  policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
+}
+##### DEBUG: Full access permission DELETE THIS! #####

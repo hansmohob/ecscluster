@@ -11,7 +11,7 @@ phases:
       - terraform init -backend-config="bucket=${bucket}" -backend-config="region=${region}"
   build:
     commands:
-      - terraform destroy -auto-approve -var="prefix_code=${prefix_code}" -var="region=${region}"
+      - terraform destroy -auto-approve
   post_build:
     commands:
       - echo "Terraform destroy completed on $(date)"
