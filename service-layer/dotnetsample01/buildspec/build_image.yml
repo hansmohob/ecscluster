@@ -7,12 +7,11 @@ phases:
   
   pre_build:
     commands:
-      # Get all repository URLs from SSM Parameter Store
-      - ECR_INFO=$(aws ssm get-parameter --name "/${prefix_code}/ecr-repos" --query "Parameter.Value" --output text)
-      - FRONTEND_REPO=$(echo $ECR_INFO | jq -r '.frontend.url')
-      - ORDER_REPO=$(echo $ECR_INFO | jq -r '.orderservice.url')
-      - PRODUCT_REPO=$(echo $ECR_INFO | jq -r '.productapi.url')
-      - USER_REPO=$(echo $ECR_INFO | jq -r '.userservice.url')
+      # Get repository URLs from SSM Parameter Store
+      - FRONTEND_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/frontend" --query "Parameter.Value" --output text)
+      - ORDER_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/orderservice" --query "Parameter.Value" --output text)
+      - PRODUCT_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/productapi" --query "Parameter.Value" --output text)
+      - USER_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/userservice" --query "Parameter.Value" --output text)
       
       - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
       
