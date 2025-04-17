@@ -1,9 +1,9 @@
 region                     = "us-east-1"
 vpc_cidr_prefix            = "10.180"
-github_repo                = "https://github.com/aws-samples/sample-developer-environment.git"
+github_repo                = "https://github.com/hansmohob/ecscluster.git"
 s3_asset_bucket            = "" # Optional
 s3_asset_prefix            = "" # Optional
-deploy_pipeline            = true
+deploy_pipeline            = false
 rotate_secret              = true
 auto_set_developer_profile = true
 code_server_version        = "4.98.2"
