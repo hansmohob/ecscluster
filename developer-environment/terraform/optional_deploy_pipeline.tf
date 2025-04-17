@@ -14,17 +14,17 @@ module "terraform_pipeline" {
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
-  name                = "sample-application"
+  name                = "eks-infrastructure"
 
-  buildspec_build = templatefile("buildspec/sample_application/build.yml", {
+  buildspec_build = templatefile("eks-infrastructure/buildspec/build.yml", {
     prefix_code = var.prefix_code
     region      = var.region
-    bucket      = module.git_repo_developer-environment.bucket_name
+    bucket      = module.git_repo_eks-infrastructure.bucket_name
   })
 
-  buildspec_destroy = templatefile("buildspec/sample_application/destroy.yml", {
+  buildspec_destroy = templatefile("eks-infrastructure/buildspec/destroy.yml", {
     prefix_code = var.prefix_code
     region      = var.region
-    bucket      = module.git_repo_developer-environment.bucket_name
+    bucket      = module.git_repo_eks-infrastructure.bucket_name
   })
 }
