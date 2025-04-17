@@ -119,13 +119,12 @@ declare -A REPO_BUCKETS=(
   ["platform-config"]="${git_bucket_platform-config}"
   ["service-layer"]="${git_bucket_service-layer}"
 )
-# Create workspace directory
+# Create workspace directory and clone repo
 mkdir -p $WORKSPACE
 chown ec2-user:ec2-user $WORKSPACE
-# Clone GitHub repo to a temporary location
-TEMP_DIR=$(mktemp -d)
-su - ec2-user -c "git clone ${github_repo} $TEMP_DIR"
-chown -R ec2-user:ec2-user $TEMP_DIR
+cd $WORKSPACE
+su - ec2-user -c "git clone ${github_repo} source_repo"
+chown -R ec2-user:ec2-user $WORKSPACE/source_repo
 # Setup each repo
 for repo_name in "$${!REPO_BUCKETS[@]}"; do
   echo "INFO: Setting up repository: $repo_name"
@@ -133,8 +132,8 @@ for repo_name in "$${!REPO_BUCKETS[@]}"; do
   
   su - ec2-user -c "mkdir -p $WORKSPACE/$repo_name && \
                     cd $WORKSPACE/$repo_name && \
-                    cp -r $TEMP_DIR/$repo_name/* . && \
-                    cp -r $TEMP_DIR/$repo_name/.* . 2>/dev/null || true && \
+                    cp -r $WORKSPACE/source_repo/$repo_name/* . && \
+                    cp -r $WORKSPACE/source_repo/$repo_name/.* . 2>/dev/null || true && \
                     git init && \
                     git add . && \
                     git commit -m 'Initial commit' && \
@@ -143,8 +142,8 @@ for repo_name in "$${!REPO_BUCKETS[@]}"; do
   
   echo "INFO: Repository setup complete for: $repo_name"
 done
-# Clean up temp directory
-rm -rf $TEMP_DIR
+# Clean up source repo
+rm -rf $WORKSPACE/source_repo
 #### END: GIT-REMOTE-S3 BOOTSTRAP ####
 
 #### START: SET DEVELOPER PROFILE AS DEFAULT ####
