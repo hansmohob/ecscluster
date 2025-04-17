@@ -1,0 +1,6 @@
+region          = "us-east-1"
+prefix_code     = "myapp"
+solution_tag    = "eks-solution"
+vpc_cidr_prefix = "10.1"
+environment_tag = "dev"
+solution_tag    = "tfceks01"
