@@ -8,7 +8,7 @@ phases:
       - terraform --version
   pre_build:
     commands:
-      - cd release
+      - cd eks-infrastructure
       - terraform init -backend-config="bucket=${bucket}" -backend-config="region=${region}"
   build:
     commands:
@@ -17,7 +17,4 @@ phases:
   post_build:
     commands:
       - echo "Terraform apply completed on $(date)"
-      - echo "Website URL -> https://$(terraform output -raw website_url)"
-      - echo "WEBSITE_URL=https://$(terraform output -raw website_url)" >> $CODEBUILD_SRC_DIR/variables.env
     exported-variables:
-      - WEBSITE_URL
