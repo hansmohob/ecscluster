@@ -156,6 +156,41 @@ done
 rm -rf $WORKSPACE/source_repo
 #### END: GIT-REMOTE-S3 BOOTSTRAP ####
 
+#### START: CONTAINER ADMIN BOOTSTRAP ####
+echo "INFO: Installing Helm..."
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+echo "INFO: Installing kubectl..."
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/${instance_arch}/kubectl"
+install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+su - ec2-user -c "echo 'source <(kubectl completion bash)' >>~/.bashrc"
+
+echo "INFO: Installing eksctl..."
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_Linux_${instance_arch}.tar.gz"
+tar -xzf eksctl_Linux_${instance_arch}.tar.gz -C /tmp && rm eksctl_Linux_${instance_arch}.tar.gz
+mv /tmp/eksctl /usr/local/bin
+chmod +x /usr/local/bin/eksctl
+
+echo "INFO: Installing k9s..."
+curl -sLO "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_${instance_arch}.tar.gz"
+tar -xzf k9s_Linux_${instance_arch}.tar.gz -C /usr/local/bin && rm k9s_Linux_${instance_arch}.tar.gz
+chmod +x /usr/local/bin/k9s
+
+echo "INFO: Installing k6 pinned version..."
+curl -sLO "https://github.com/grafana/k6/releases/download/v0.57.0/k6-v0.57.0-linux-${instance_arch}.tar.gz"
+tar -xzf k6-v0.57.0-linux-${instance_arch}.tar.gz -C /tmp
+install -o root -g root -m 0755 /tmp/k6-v0.57.0-linux-${instance_arch}/k6 /usr/local/bin/k6
+
+echo "INFO: Installing eks-node-viewer..."
+if [ "${instance_arch}" = "arm64" ]; then
+    curl -sLO "https://github.com/awslabs/eks-node-viewer/releases/latest/download/eks-node-viewer_Linux_arm64"
+    install -o root -g root -m 0755 eks-node-viewer_Linux_arm64 /usr/local/bin/eks-node-viewer
+else
+    curl -sLO "https://github.com/awslabs/eks-node-viewer/releases/latest/download/eks-node-viewer_Linux_x86_64"
+    install -o root -g root -m 0755 eks-node-viewer_Linux_x86_64 /usr/local/bin/eks-node-viewer
+fi
+#### END: CONTAINER ADMIN BOOTSTRAP ####
+
 #### START: SET DEVELOPER PROFILE AS DEFAULT ####
 %{ if auto_set_profile }
 echo "INFO: Setting up AWS profile defaults..."
