@@ -10,7 +10,7 @@ module "terraform_pipeline" {
   vpc_id              = aws_vpc.main.id
   subnet_id           = aws_subnet.private_01.id
   security_group_id   = aws_security_group.code_server.id
-  source_bucket       = module.git_repo_main.bucket_name
+  source_bucket       = module.git_repo_developer-environment.bucket_name
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
@@ -19,12 +19,12 @@ module "terraform_pipeline" {
   buildspec_build = templatefile("buildspec/sample_application/build.yml", {
     prefix_code = var.prefix_code
     region      = var.region
-    bucket      = module.git_repo_main.bucket_name
+    bucket      = module.git_repo_developer-environment.bucket_name
   })
 
   buildspec_destroy = templatefile("buildspec/sample_application/destroy.yml", {
     prefix_code = var.prefix_code
     region      = var.region
-    bucket      = module.git_repo_main.bucket_name
+    bucket      = module.git_repo_developer-environment.bucket_name
   })
 }

@@ -753,7 +753,7 @@ module "git_repo_developer-environment" {
 }
 
 resource "aws_iam_role_policy_attachment" "devbox_repo" {
-  policy_arn = module.git_repo_main.access_policy_arn
+  policy_arn = module.git_repo_developer-environment.access_policy_arn
   role       = aws_iam_role.code_server.name
 }
 
