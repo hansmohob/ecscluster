@@ -1,4 +1,9 @@
-### Resource Group
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 resource "aws_resourcegroups_group" "eks" {
   name        = "${var.prefix_code}-eks-resources"
   description = "EKS Environment Resources"
@@ -22,7 +27,6 @@ resource "aws_resourcegroups_group" "eks" {
   }
 }
 
-### KMS
 resource "aws_kms_key" "eks" {
   description             = "EKS encryption key for AWS services"
   deletion_window_in_days = 7
@@ -69,13 +73,11 @@ resource "aws_kms_key" "eks" {
   }
 }
 
-# KMS Alias
 resource "aws_kms_alias" "eks" {
   name          = "alias/${var.prefix_code}-eks-kms-cmk"
   target_key_id = aws_kms_key.eks.key_id
 }
 
-### VPC and Network Infrastructure
 resource "aws_vpc" "eks" {
   cidr_block           = "${var.vpc_cidr_prefix}.0.0/16"
   enable_dns_hostnames = true
@@ -89,7 +91,6 @@ resource "aws_vpc" "eks" {
   }
 }
 
-### VPC Flow Logs
 resource "aws_iam_role" "vpc_flow_logs" {
   name        = "${var.prefix_code}-eks-iamrole-vpcflowlogs"
   description = "Publish flow logs to CloudWatch Logs"
@@ -165,7 +166,6 @@ resource "aws_flow_log" "eks" {
   }
 }
 
-# Public Subnets (3 AZs)
 resource "aws_subnet" "public" {
   count                   = 3
   vpc_id                  = aws_vpc.eks.id
@@ -181,7 +181,6 @@ resource "aws_subnet" "public" {
   }
 }
 
-# Private Subnets (3 AZs)
 resource "aws_subnet" "private" {
   count                   = 3
   vpc_id                  = aws_vpc.eks.id
@@ -197,7 +196,6 @@ resource "aws_subnet" "private" {
   }
 }
 
-# Internet Gateway
 resource "aws_internet_gateway" "eks" {
   vpc_id = aws_vpc.eks.id
 
@@ -207,7 +205,6 @@ resource "aws_internet_gateway" "eks" {
   }
 }
 
-# NAT Gateways and EIPs
 resource "aws_eip" "nat" {
   count  = 3
   domain = "vpc"
@@ -231,7 +228,6 @@ resource "aws_nat_gateway" "eks" {
   }
 }
 
-# Route Tables
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.eks.id
 
@@ -261,7 +257,6 @@ resource "aws_route_table" "private" {
   }
 }
 
-# Route Table Associations
 resource "aws_route_table_association" "public" {
   count          = 3
   subnet_id      = aws_subnet.public[count.index].id
