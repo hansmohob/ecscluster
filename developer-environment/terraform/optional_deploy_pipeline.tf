@@ -16,13 +16,13 @@ module "terraform_pipeline" {
   developer_role_arn  = aws_iam_role.developer.arn
   name                = "eks-infrastructure"
 
-  buildspec_build = templatefile("eks-infrastructure/buildspec/build.yml", {
+  buildspec_build = templatefile("../..eks-infrastructure/buildspec/build.yml", {
     prefix_code = var.prefix_code
     region      = var.region
     bucket      = module.git_repo_eks-infrastructure.bucket_name
   })
 
-  buildspec_destroy = templatefile("eks-infrastructure/buildspec/destroy.yml", {
+  buildspec_destroy = templatefile("../..eks-infrastructure/buildspec/destroy.yml", {
     prefix_code = var.prefix_code
     region      = var.region
     bucket      = module.git_repo_eks-infrastructure.bucket_name
