@@ -2,27 +2,34 @@ variable "prefix_code" {
   type        = string
   description = "Prefix for resource names"
 }
-
 variable "region" {
   type        = string
   description = "AWS region"
 }
-
+variable "az01" {
+  description = "Availability Zone 1"
+  type        = string
+}
+variable "az02" {
+  description = "Availability Zone 2"
+  type        = string
+}
+variable "az03" {
+  description = "Availability Zone 2"
+  type        = string
+}
 variable "environment_tag" {
   type        = string
   description = "Environment identifier for resource tagging e.g. dev, prod"
 }
-
 variable "solution_tag" {
   type        = string
   description = "Solution name tag for resource groups"
 }
-
 variable "vpc_cidr_prefix" {
   type        = string
   description = "First two octets of VPC CIDR (e.g., 10.0)"
 }
-
 variable "region_alb_account_ids" {
   type        = map(string)
   description = "ALB account IDs by region for S3 bucket policy"

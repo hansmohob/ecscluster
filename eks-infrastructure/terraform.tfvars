@@ -1,4 +1,7 @@
 region          = "us-east-1"
+az01            = "us-east-1a"
+az02            = "us-east-1b"
+az03            = "us-east-1c"
 prefix_code     = "myapp"
 solution_tag    = "eks-solution"
 vpc_cidr_prefix = "10.1"

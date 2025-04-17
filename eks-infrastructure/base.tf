@@ -166,30 +166,84 @@ resource "aws_flow_log" "eks" {
   }
 }
 
-resource "aws_subnet" "public" {
-  count                   = 3
+resource "aws_subnet" "public_subnet_01" {
   vpc_id                  = aws_vpc.eks.id
-  cidr_block              = "${var.vpc_cidr_prefix}.${count.index}.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  cidr_block              = "${var.vpc_cidr_prefix}.1.0/24"
+  availability_zone       = var.az01
   map_public_ip_on_launch = false
 
   tags = {
-    Name = "${var.prefix_code}-eks-subnet-public${count.index + 1}-${data.aws_availability_zones.available.names[count.index]}"
+    Name         = "${var.prefix_code}-eks-subnet-public1-${var.az01}"
     resourcetype = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
     "kubernetes.io/role/elb" = "1"
   }
 }
 
-resource "aws_subnet" "private" {
-  count                   = 3
+resource "aws_subnet" "public_subnet_02" {
   vpc_id                  = aws_vpc.eks.id
-  cidr_block              = "${var.vpc_cidr_prefix}.${count.index + 10}.0/24"
-  availability_zone       = data.aws_availability_zones.available.names[count.index]
+  cidr_block              = "${var.vpc_cidr_prefix}.2.0/24"
+  availability_zone       = var.az02
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-private${format("%02d", count.index + 1)}-${data.aws_availability_zones.available.names[count.index]}"
+    Name         = "${var.prefix_code}-eks-subnet-public2-${var.az02}"
+    resourcetype = "network"
+    "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
+    "kubernetes.io/role/elb" = "1"
+  }
+}
+
+resource "aws_subnet" "public_subnet_03" {
+  vpc_id                  = aws_vpc.eks.id
+  cidr_block              = "${var.vpc_cidr_prefix}.3.0/24"
+  availability_zone       = var.az03
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-subnet-public3-${var.az03}"
+    resourcetype = "network"
+    "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
+    "kubernetes.io/role/elb" = "1"
+  }
+}
+
+resource "aws_subnet" "private_subnet_01" {
+  vpc_id                  = aws_vpc.eks.id
+  cidr_block              = "${var.vpc_cidr_prefix}.11.0/24"
+  availability_zone       = var.az01
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-subnet-private1-${var.az01}"
+    resourcetype = "network"
+    "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
+    "kubernetes.io/role/internal-elb" = "1"
+  }
+}
+
+resource "aws_subnet" "private_subnet_02" {
+  vpc_id                  = aws_vpc.eks.id
+  cidr_block              = "${var.vpc_cidr_prefix}.12.0/24"
+  availability_zone       = var.az02
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-subnet-private2-${var.az02}"
+    resourcetype = "network"
+    "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
+    "kubernetes.io/role/internal-elb" = "1"
+  }
+}
+
+resource "aws_subnet" "private_subnet_03" {
+  vpc_id                  = aws_vpc.eks.id
+  cidr_block              = "${var.vpc_cidr_prefix}.13.0/24"
+  availability_zone       = var.az03
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-subnet-private3-${var.az03}"
     resourcetype = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
     "kubernetes.io/role/internal-elb" = "1"
@@ -205,30 +259,65 @@ resource "aws_internet_gateway" "eks" {
   }
 }
 
-resource "aws_eip" "nat" {
-  count  = 3
+# NAT Gateways
+resource "aws_eip" "nat_01" {
   domain = "vpc"
-
   tags = {
-    Name         = "${var.prefix_code}-eks-eip-${data.aws_availability_zones.available.names[count.index]}"
+    Name         = "${var.prefix_code}-eks-eip-${var.az01}"
     resourcetype = "network"
   }
 }
 
-resource "aws_nat_gateway" "eks" {
-  count         = 3
-  allocation_id = aws_eip.nat[count.index].id
-  subnet_id     = aws_subnet.public[count.index].id
-
-  depends_on = [aws_internet_gateway.eks]
-
+resource "aws_eip" "nat_02" {
+  domain = "vpc"
   tags = {
-    Name         = "${var.prefix_code}-eks-nat-public${format("%02d", count.index + 1)}-${data.aws_availability_zones.available.names[count.index]}"
+    Name         = "${var.prefix_code}-eks-eip-${var.az02}"
     resourcetype = "network"
   }
 }
 
-resource "aws_route_table" "public" {
+resource "aws_eip" "nat_03" {
+  domain = "vpc"
+  tags = {
+    Name         = "${var.prefix_code}-eks-eip-${var.az03}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_nat_gateway" "nat_01" {
+  allocation_id = aws_eip.nat_01.id
+  subnet_id     = aws_subnet.public_subnet_01.id
+  depends_on    = [aws_internet_gateway.eks]
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-nat-public1-${var.az01}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_nat_gateway" "nat_02" {
+  allocation_id = aws_eip.nat_02.id
+  subnet_id     = aws_subnet.public_subnet_02.id
+  depends_on    = [aws_internet_gateway.eks]
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-nat-public2-${var.az02}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_nat_gateway" "nat_03" {
+  allocation_id = aws_eip.nat_03.id
+  subnet_id     = aws_subnet.public_subnet_03.id
+  depends_on    = [aws_internet_gateway.eks]
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-nat-public3-${var.az03}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_route_table" "public_01" {
   vpc_id = aws_vpc.eks.id
 
   route {
@@ -237,34 +326,107 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name         = "${var.prefix_code}-eks-routetable-public"
+    Name         = "${var.prefix_code}-eks-routetable-public1-${var.az01}"
     resourcetype = "network"
   }
 }
 
-resource "aws_route_table" "private" {
-  count  = 3
+resource "aws_route_table" "public_02" {
+  vpc_id = aws_vpc.eks.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.eks.id
+  }
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-routetable-public2-${var.az02}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_route_table" "public_03" {
+  vpc_id = aws_vpc.eks.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.eks.id
+  }
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-routetable-public3-${var.az03}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_route_table" "private_01" {
   vpc_id = aws_vpc.eks.id
 
   route {
     cidr_block     = "0.0.0.0/0"
-    nat_gateway_id = aws_nat_gateway.eks[count.index].id
+    nat_gateway_id = aws_nat_gateway.nat_01.id
   }
 
   tags = {
-    Name         = "${var.prefix_code}-eks-routetable-private${count.index + 1}-${data.aws_availability_zones.available.names[count.index]}"
+    Name         = "${var.prefix_code}-eks-routetable-private1-${var.az01}"
     resourcetype = "network"
   }
 }
 
-resource "aws_route_table_association" "public" {
-  count          = 3
-  subnet_id      = aws_subnet.public[count.index].id
-  route_table_id = aws_route_table.public.id
+resource "aws_route_table" "private_02" {
+  vpc_id = aws_vpc.eks.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_02.id
+  }
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-routetable-private2-${var.az02}"
+    resourcetype = "network"
+  }
 }
 
-resource "aws_route_table_association" "private" {
-  count          = 3
-  subnet_id      = aws_subnet.private[count.index].id
-  route_table_id = aws_route_table.private[count.index].id
+resource "aws_route_table" "private_03" {
+  vpc_id = aws_vpc.eks.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat_03.id
+  }
+
+  tags = {
+    Name         = "${var.prefix_code}-eks-routetable-private3-${var.az03}"
+    resourcetype = "network"
+  }
+}
+
+resource "aws_route_table_association" "public_01" {
+  subnet_id      = aws_subnet.public_subnet_01.id
+  route_table_id = aws_route_table.public_01.id
+}
+
+resource "aws_route_table_association" "public_02" {
+  subnet_id      = aws_subnet.public_subnet_02.id
+  route_table_id = aws_route_table.public_02.id
+}
+
+resource "aws_route_table_association" "public_03" {
+  subnet_id      = aws_subnet.public_subnet_03.id
+  route_table_id = aws_route_table.public_03.id
+}
+
+resource "aws_route_table_association" "private_01" {
+  subnet_id      = aws_subnet.private_subnet_01.id
+  route_table_id = aws_route_table.private_01.id
+}
+
+resource "aws_route_table_association" "private_02" {
+  subnet_id      = aws_subnet.private_subnet_02.id
+  route_table_id = aws_route_table.private_02.id
+}
+
+resource "aws_route_table_association" "private_03" {
+  subnet_id      = aws_subnet.private_subnet_03.id
+  route_table_id = aws_route_table.private_03.id
 }
