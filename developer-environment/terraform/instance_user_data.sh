@@ -123,7 +123,7 @@ declare -A REPO_BUCKETS=(
 mkdir -p $WORKSPACE
 chown ec2-user:ec2-user $WORKSPACE
 cd $WORKSPACE
-su - ec2-user -c "git clone ${github_repo} source_repo"
+su - ec2-user -c "git clone ${github_repo} $WORKSPACE/source_repo"
 chown -R ec2-user:ec2-user $WORKSPACE/source_repo
 # Setup each repo
 for repo_name in "$${!REPO_BUCKETS[@]}"; do
