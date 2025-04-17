@@ -122,7 +122,7 @@ declare -A REPO_BUCKETS=(
 # Create workspace directory and clone repo
 mkdir -p $WORKSPACE
 chown ec2-user:ec2-user $WORKSPACE
-
+# TODO: Sort this bit out
 echo "DEBUG: About to clone repo"
 su - ec2-user -c "git clone ${github_repo} $WORKSPACE/source_repo 2>&1"
 CLONE_STATUS=$?
@@ -134,9 +134,6 @@ if [ $CLONE_STATUS -ne 0 ]; then
     ls -la $WORKSPACE
     exit 1
 fi
-
-
-su - ec2-user -c "git clone ${github_repo} $WORKSPACE/source_repo"
 chown -R ec2-user:ec2-user $WORKSPACE/source_repo
 # Setup each repo
 for repo_name in "$${!REPO_BUCKETS[@]}"; do
