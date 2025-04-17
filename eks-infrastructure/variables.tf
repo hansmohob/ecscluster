@@ -30,6 +30,11 @@ variable "vpc_cidr_prefix" {
   type        = string
   description = "First two octets of VPC CIDR (e.g., 10.0)"
 }
+variable "privileged_mode" {
+  type        = bool
+  description = "Enable privileged mode de for Docker builds" 
+  default     = false
+}
 variable "region_alb_account_ids" {
   type        = map(string)
   description = "ALB account IDs by region for S3 bucket policy"

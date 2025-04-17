@@ -58,3 +58,8 @@ variable "name" {
   type        = string
   description = "Unique name for this pipeline"
 }
+variable "privileged_mode" {
+  type        = bool
+  description = "Enable privileged mode for Docker builds"
+  default     = false
+}

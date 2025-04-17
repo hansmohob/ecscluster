@@ -1,0 +1,20 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - nohup dockerd &
+      - sleep 5
+  
+  pre_build:
+    commands:
+      - ls
+
+  build:
+    commands:
+      # Build and push Frontend
+      - ls
+
+  post_build:
+    commands:
+      # Store image tag in SSM Parameter Store
+      - ls

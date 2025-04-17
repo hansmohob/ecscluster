@@ -59,6 +59,7 @@ resource "aws_codebuild_project" "build" {
     image                       = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
     type                        = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = var.privileged_mode
   }
 
   source {
@@ -92,6 +93,7 @@ resource "aws_codebuild_project" "destroy" {
     image                       = "aws/codebuild/amazonlinux-x86_64-standard:5.0"
     type                       = "LINUX_CONTAINER"
     image_pull_credentials_type = "CODEBUILD"
+    privileged_mode             = var.privileged_mode
   }
 
   source {

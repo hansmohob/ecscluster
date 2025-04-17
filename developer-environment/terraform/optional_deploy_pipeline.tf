@@ -44,6 +44,8 @@ module "service-layer_pipeline" {
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
   name                = "service-layer"
+  privileged_mode     = "true"
+
 
   buildspec_build = templatefile("../../service-layer/dotnetsample01/buildspec/build_image.yml", {
     prefix_code = var.prefix_code
