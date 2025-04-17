@@ -111,7 +111,6 @@ echo "INFO: Configuring git..."
 su - ec2-user -c "git config --global user.name 'EC2 User'"
 su - ec2-user -c "git config --global user.email 'ec2-user@example.com'"
 su - ec2-user -c "git config --global init.defaultBranch main"
-
 # Define repo to bucket mappings
 WORKSPACE="/home/ec2-user/workspace"
 declare -A REPO_BUCKETS=(
@@ -126,6 +125,7 @@ chown ec2-user:ec2-user $WORKSPACE
 # Clone GitHub repo to a temporary location
 TEMP_DIR=$(mktemp -d)
 su - ec2-user -c "git clone ${github_repo} $TEMP_DIR"
+chown -R ec2-user:ec2-user $TEMP_DIR
 # Setup each repo
 for repo_name in "$${!REPO_BUCKETS[@]}"; do
   echo "INFO: Setting up repository: $repo_name"
