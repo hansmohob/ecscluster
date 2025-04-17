@@ -45,13 +45,13 @@ module "service-layer_pipeline" {
   developer_role_arn  = aws_iam_role.developer.arn
   name                = "service-layer"
 
-  buildspec_build = templatefile("../../service-layer/buildspec/build_image.yml", {
+  buildspec_build = templatefile("../../service-layer/dotnetsample01/buildspec/build_image.yml", {
     prefix_code = var.prefix_code
     region      = var.region
-    bucket      = module.git_repo_service-layer.bucket_name
+    account_id  = data.aws_caller_identity.current.account_id
   })
 
-  buildspec_destroy = templatefile("../../service-layer/buildspec/delete_image.yml", {
+  buildspec_destroy = templatefile("../../service-layer/dotnetsample01/buildspec/delete_image.yml", {
     prefix_code = var.prefix_code
     region      = var.region
     bucket      = module.git_repo_service-layer.bucket_name
