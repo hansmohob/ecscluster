@@ -744,7 +744,7 @@ resource "random_password" "code_server" {
 }
 
 ### Source Control Storage - S3 bucket configured as a git remote for version control, acting as a serverless git repository with encryption and access controls
-module "git_repo_main" {
+module "git_repo_developer-environment" {
   source         = "./modules/git-bucket"
   prefix_code    = var.prefix_code
   kms_key_arn    = aws_kms_key.main.arn
