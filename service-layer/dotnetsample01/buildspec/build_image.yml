@@ -1,0 +1,58 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - nohup dockerd &
+      - sleep 5
+  
+  pre_build:
+    commands:
+      # Get repository URLs from SSM Parameter Store
+      - FRONTEND_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/frontend-url" --query "Parameter.Value" --output text)
+      - ORDER_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/order-service-url" --query "Parameter.Value" --output text)
+      - PRODUCT_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/product-api-url" --query "Parameter.Value" --output text)
+      - USER_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/user-service-url" --query "Parameter.Value" --output text)
+      
+      - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+      
+      - aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${account_id}.dkr.ecr.${region}.amazonaws.com
+
+  build:
+    commands:
+      # Build and push Frontend
+      - cd frontend
+      - docker build -t $FRONTEND_REPO:$IMAGE_TAG .
+      - docker push $FRONTEND_REPO:$IMAGE_TAG
+      
+      # Build and push OrderService
+      - cd ../services/OrderService
+      - docker build -t $ORDER_REPO:$IMAGE_TAG .
+      - docker push $ORDER_REPO:$IMAGE_TAG
+      
+      # Build and push ProductApi
+      - cd ../ProductApi
+      - docker build -t $PRODUCT_REPO:$IMAGE_TAG .
+      - docker pu push $PRODUCT_REPO:$IMAGE_TAG
+      
+      # Build and push UserService
+      - cd ../UserService
+      - docker build -t $USER_REPO:$IMAGE_TAG .
+      - docker push $USER_REPO:$IMAGE_TAG
+
+  post_build:
+    commands:
+      # Store image tag in SSM Parameter Store
+      - aws ssm put-parameter --name "/${prefix_code}/image-tag" --value "$IMAGE_TAG" --type String --overwrite
+      - echo "Image tag $IMAGE_TAG stored in SSM Parameter Store"
+      # Store full image URLs with tags
+      - |
+        IMAGES_JSON=$(cat <<EOF
+        {
+          "frontend": "$FRONTEND_REPO:$IMAGE_TAG",
+          "order-service": "$ORDER_REPO:$IMAGE_TAG",
+          "product-api": "$PRODUCT_REPO:$IMAGE_TAG",
+          "user-service": "$USER_REPO:$IMAGE_TAG"
+        }
+        EOF
+        )
+      - aws ssm put-parameter --name "/${prefix_code}/image-urls" --value "$IMAGES_JSON" --type String --overwrite --region ${region}

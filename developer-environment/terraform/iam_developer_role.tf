@@ -178,6 +178,47 @@ resource "aws_iam_role_policy" "developer_ec2_codebuild" {
   })
 }
 
+resource "aws_iam_role_policy" "developer_ecr" {
+  name = "${var.prefix_code}-iampolicy-ecr"
+  role = aws_iam_role.developer.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:GetRepositoryPolicy",
+          "ecr:DescribeRepositories",
+          "ecr:ListImages",
+          "ecr:DescribeImages",
+          "ecr:BatchGetImage",
+          "ecr:InitiateLayerUpload",
+          "ecr:UploadLayerPart",
+          "ecr:CompleteLayerUpload",
+          "ecr:PutImage"
+        ]
+        Resource = "arn:aws:ecr:${var.region}:${data.aws_caller_identity.current.account_id}:repository/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter",
+          "ssm:PutParameter"
+        ]
+        Resource = [
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.prefix_code}/ecr/*",
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/${var.prefix_code}/image-*"
+        ]
+      }
+    ]
+  })
+}
+
+
 ##### DEBUG: Full access permission DELETE THIS! #####
 resource "aws_iam_role_policy_attachment" "developer_admin_policy" {
   role       = aws_iam_role.developer.name
