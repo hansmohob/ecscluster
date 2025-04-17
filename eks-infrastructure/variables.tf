@@ -8,6 +8,11 @@ variable "region" {
   description = "AWS region"
 }
 
+variable "environment_tag" {
+  type        = string
+  description = "Environment identifier for resource tagging e.g. dev, prod"
+}
+
 variable "solution_tag" {
   type        = string
   description = "Solution name tag for resource groups"
