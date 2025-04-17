@@ -1,6 +1,6 @@
 module "terraform_pipeline" {
   count  = var.deploy_pipeline ? 1 : 0
-  source = "./modules/git-pipeline"
+  source = "./modules/git_pipeline"
 
   prefix_code         = var.prefix_code
   region              = var.region
