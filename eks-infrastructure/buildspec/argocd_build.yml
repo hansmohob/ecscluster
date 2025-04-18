@@ -15,7 +15,7 @@ phases:
   pre_build:
     commands:
       # Configure kubectl
-      - aws eks update-kubeconfig --name ${prefix_code}-eks-cluster -- --region ${region}
+      - aws eks update-kubeconfig --name ${prefix_code}-eks-cluster --region ${region}
       
       # Test cluster connection
       - kubectl get nodes

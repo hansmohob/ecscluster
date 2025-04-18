@@ -17,9 +17,10 @@ module "eks-infrastructure_pipeline" {
   name                = "eks-infrastructure"
 
   buildspec_build = templatefile("../../eks-infrastructure/buildspec/tf_build.yml", {
-    prefix_code = var.prefix_code
-    region      = var.region
-    bucket      = module.git_repo_eks-infrastructure.bucket_name
+    prefix_code        = var.prefix_code
+    region             = var.region
+    bucket             = module.git_repo_eks-infrastructure.bucket_name
+    developer_role_arn = aws_iam_role.developer.arn
   })
 
   buildspec_destroy = templatefile("../../eks-infrastructure/buildspec/tf_destroy.yml", {
