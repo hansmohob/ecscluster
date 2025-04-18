@@ -7,7 +7,7 @@ namespace UserService.Controllers;
 [Route("api/[controller]")]
 public class UserController : ControllerBase
 {
-    private static readonlonly List<User> _users = new()
+    private static readonly List<User> _users = new()
     {
         new User 
         { 
