@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { Paper, Typography, TextField, Button, Box } from '@mui/material';
 import axios from 'axios';
-import { Typography, TextField, Button } from '@material-ui/core';
 
 function Profile() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // Assuming user ID 1 for simplicity
     axios.get('http://localhost:5002/api/user/1')
       .then(response => setUser(response.data))
       .catch(error => console.error('Error fetching user:', error));
@@ -14,16 +13,15 @@ function Profile() {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    // Here you would typically send the updated user data to the server
     console.log('Updated user:', user);
   };
 
   if (!user) return <Typography>Loading...</Typography>;
 
   return (
-    <div>
-      <Typography variant="h4">Your Profile</Typography>
-      <form onSubmit={handleSubmit}>
+    <Paper sx={{ mt: 2, p: 3 }}>
+      <Typography variant="h4" sx={{ mb: 3 }}>Your Profile</Typography>
+      <Box component="form" onSubmit={handleSubmit}>
         <TextField 
           fullWidth 
           margin="normal" 
@@ -52,11 +50,15 @@ function Profile() {
           value={user.lastName} 
           onChange={e => setUser({...user, lastName: e.target.value})}
         />
-        <Button type="submit" variant="contained" color="primary">
+        <Button 
+          type="submit" 
+          variant="contained" 
+          sx={{ mt: 2 }}
+        >
           Update Profile
         </Button>
-      </form>
-    </div>
+      </Box>
+    </Paper>
   );
 }
 

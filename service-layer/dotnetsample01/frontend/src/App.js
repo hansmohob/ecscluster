@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
-import { CssBaseline, Container } from '@material-ui/core';
+import { CssBaseline, Container } from '@mui/material';
 import NavBar from './components/NavBar';
 import Products from './components/Products';
 import Orders from './components/Orders';

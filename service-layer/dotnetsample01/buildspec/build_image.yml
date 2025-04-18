@@ -20,7 +20,7 @@ phases:
   build:
     commands:
       # Build and push Frontend
-      - cd frontend
+      - cd dotnetsample01/frontend
       - docker build -t $FRONTEND_REPO:$IMAGE_TAG .
       - docker push $FRONTEND_REPO:$IMAGE_TAG
       
