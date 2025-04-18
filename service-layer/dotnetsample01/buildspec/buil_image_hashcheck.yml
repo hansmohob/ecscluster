@@ -1,0 +1,103 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      - nohup dockerd &
+      - sleep 5
+  
+  pre_build:
+    commands:
+      # Get repository URLs from SSM Parameter Store
+      - FRONTEND_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/frontend" --query "Parameter.Value" --output text)
+      - ORDER_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/orderservice" --query "Parameter.Value" --output text)
+      - PRODUCT_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/productapi" --query "Parameter.Value" --output text)
+      - USER_REPO=$(aws ssm get-parameter --name "/${prefix_code}/ecr/userservice" --query "Parameter.Value" --output text)
+      
+      - IMAGE_TAG=$(date +%Y%m%d%H%M%S)
+      
+      - aws ecr get-login-password --region ${region} | docker login --username AWS --password-***** ${account_id}.dkr.ecr.${region}.amazonaws.com
+
+      # Calculate hashes for each service
+      - |
+        calculate_hash() {
+          find . -type f -not -path "*/\.*" -not -path "*/bin/*" -not -path "*/obj/*" -exec md5sum {} \; | sort -k 2 | md5sum | cut -d' ' -f1
+        }
+
+  build:
+    commands:
+      # Frontend
+      - cd dotnetsample01/frontend
+      - CURRENT_HASH=$(calculate_hash)
+      - PREV_HASH=$(aws ssm get-parameter --name "/${prefix_code}/hashes/frontend" --query "Parameter.Value" --output text 2>/dev/null || echo "none")
+      - |
+        if [ "$CURRENT_HASH" = "$PREV_HASH" ]; then
+          echo "No changes in frontend, using previous image"
+          LAST_TAG=$(aws ssm get-parameter --name "/${prefix_code}/frontend-last-tag" --query "Parameter.Value" --output text)
+          docker pull $FRONTEND_REPO:$LAST_TAG
+          docker tag $FRONTEND_REPO:$LAST_TAG $FRONTEND_REPO:$IMAGE_TAG
+        else
+          echo "Building frontend"
+          docker build -t $FRONTEND_REPO:$IMAGE_TAG .
+          aws ssm put-parameter --name "/${prefix_code}/hashes/frontend" --value "$CURRENT_HASH" --type String --overwrite
+        fi
+      - docker push $FRONTEND_REPO:$IMAGE_TAG
+      - aws ssm put-parameter --name "/${prefix_code}/frontend-last-tag" --value "$IMAGE_TAG" --type String --overwrite
+      
+      # OrderService
+      - cd ../services/OrderService
+      - CURRENT_HASH=$(calculate_hash)
+      - PREV_HASH=$(aws ssm get-parameter --name "/${prefix_code}/hashes/orderservice" --query "Parameter.Value" --output text 2>/dev/null || echo "none")
+      - |
+        if [ "$CURRENT_HASH" = "$PREV_HASH" ]; then
+          echo "No changes in OrderService, using previous image"
+          LAST_TAG=$(aws ssm get-parameter --name "/${prefix_code}/orderservice-last-tag" --query "Parameter.Value" --output text)
+          docker pull $ORDER_REPO:$LAST_TAG
+          docker tag $ORDER_REPO:$LAST_TAG $ORDER_REPO:$IMAGE_TAG
+        else
+          echo "Building OrderService"
+          docker build -t $ORDER_REPO:$IMAGE_TAG .
+          aws ssm put-parameter --name "/${prefix_code}/hashes/orderservice" --value "$CURRENT_HASH" --type String --overwrite
+        fi
+      - docker push $ORDER_REPO:$IMAGE_TAG
+      - aws ssm put-parameter --name "/${prefix_code}/orderservice-last-tag" --value "$IMAGE_TAG" --type String --overwrite
+
+      # ProductApi
+      - cd ../ProductApi
+      - CURRENT_HASH=$(calculate_hash)
+      - PREV_HASH=$(aws ssm get-parameter --name "/${prefix_code}/hashes/productapi" --query "Parameter.Value" --output text 2>/dev/null || echo "none")
+      - |
+        if [ "$CURRENT_HASH" = "$PREV_HASH" ]; then
+          echo "No changes in ProductApi, using previous image"
+          LAST_TAG=$(aws ssm get-parameter --name "/${prefix_code}/productapi-last-tag" --query "Parameter.Value" --output text)
+          docker pull $PRODUCT_REPO:$LAST_TAG
+          docker tag $PRODUCT_REPO:$LAST_TAG $PRODUCT_REPO:$IMAGE_TAG
+        else
+          echo "Building ProductApi"
+          docker build -t $PRODUCT_REPO:$IMAGE_TAG .
+          aws ssm put-parameter --name "/${prefix_code}/hashes/productapi" --value "$CURRENT_HASH" --type String --overwrite
+        fi
+      - docker push $PRODUCT_REPO:$IMAGE_TAG
+      - aws ssm put-parameter --name "/${prefix_code}/productapi-last-tag" --value "$IMAGE_TAG" --type String --overwrite
+
+      # UserService
+      - cd ../UserService
+      - CURRENT_HASH=$(calculate_hash)
+      - PREV_HASH=$(aws ssm get-parameter --name "/${prefix_code}/hashes/userservice" --query "Parameter.Value" --output text 2>/dev/null || echo "none")
+      - |
+        if [ "$CURRENT_HASH" = "$PREV_HASH" ]; then
+          echo "No changes in UserService, using previous image"
+          LAST_TAG=$(aws ssm get-parameter --name "/${prefix_code}/userservice-last-tag" --query "Parameter.Value" --output text)
+          docker pull $USER_REPO:$LAST_TAG
+          docker tag $USER_REPO:$LAST_TAG $USER_REPO:$IMAGE_TAG
+        else
+          echo "Building UserService"
+          docker build -t $USER_REPO:$IMAGE_TAG .
+          aws ssm put-parameter --name "/${prefix_code}/hashes/userservice" --value "$CURRENT_HASH" --type String --overwrite
+        fi
+      - docker push $USER_REPO:$IMAGE_TAG
+      - aws ssm put-parameter --name "/${prefix_code}/userservice-last-tag" --value "$IMAGE_TAG" --type String --overwrite
+
+  post_build:
+    commands:
+      - aws ssm put-parameter --name "/${prefix_code}/image-tag" --value "$IMAGE_TAG" --type String --overwrite
+      - echo "Image tag $IMAGE_TAG stored in SSM Parameter Store"

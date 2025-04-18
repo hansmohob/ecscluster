@@ -12,14 +12,14 @@ public class OrderController : ControllerBase
 
     [HttpGet]
     public ActionResult<IEnumerable<Order>> GetAll()
-    {  {
+    {
         return Ok(_orders);
     }
 
     [HttpGet("{id}")]
     public ActionResult<Order> GetById(int id)
     {
-        var order = _orders.FirstOrDefault(o => o.Id == id);
+        var order = _orders.FirstOrDefault(o => o.Id.Id == id);
         if (order == null)
             return NotFound();
         return Ok(order);
@@ -41,9 +41,6 @@ public class OrderController : ControllerBase
         order.TotalAmount = order.Items.Sum(item => item.UnitPrice * item.Quantity);
         
         _orders.Add(order);
-        
-        // In a real application, we would publish to RabbitMQ here
-        
         return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
     }
 
