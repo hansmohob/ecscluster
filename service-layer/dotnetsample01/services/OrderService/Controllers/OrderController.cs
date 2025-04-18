@@ -19,7 +19,7 @@ public class OrderController : ControllerBase
     [HttpGet("{id}")]
     public ActionResult<Order> GetById(int id)
     {
-        var order = _orders.FirstOrDefault(o => o.Id.Id == id);
+        var order = _orders.FirstOrDefault(o => o.Id == id);
         if (order == null)
             return NotFound();
         return Ok(order);
@@ -38,7 +38,7 @@ public class OrderController : ControllerBase
         order.Id = _nextId++;
         order.CreatedAt = DateTime.UtcNow;
         order.Status = "Pending";
-        order.TotalAmount = order.Items.Sum(item => item.UnitPrice * item.Quantity);
+        order.TotalAmount = order.Items?.Sum(item => item.UnitPrice * item.Quantity) ?? 0;
         
         _orders.Add(order);
         return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
