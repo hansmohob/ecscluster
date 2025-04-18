@@ -1,0 +1,68 @@
+﻿@page "/"
+@inject HttpClient Http
+@using System.Net.Http.Json
+
+<PageTitle>Products</PageTitle>
+
+<h1>Products</h1>
+
+@if (products == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="row">
+        @foreach (var product in products)
+        {
+            <div class="col-md-4 mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">@product.Name</h5>
+                        <p class="card-text">@product.Description</p>
+                        <p class="card-text">Price: $@product.Price.ToString("F2")</p>
+                        <p class="card-text">In Stock: @product.StockQuantity</p>
+                        <button class="btn btn-primary" @onclick="() => AddToCart(product)">Add to Cart</button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private Product[]? products;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            products = await Http.GetFromJsonAsync<Product[]>("api/product");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading products: {ex.Message}");
+            products = new[]
+            {
+                new Product { Id = 1, Name = "Product 1", Description = "Description 1", Price = 19.99m, StockQuantity = 100 },
+                new Product { Id = 2, Name = "Product 2", Description = "Description 2", Price = 29.99m, StockQuantity = 150 },
+                new Product { Id = 3, Name = "Product 3", Description = "Description 3", Price = 39.99m, StockQuantity = 200 }
+            };
+        }
+    }
+
+    private async Task AddToCart(Product product)
+    {
+        await Task.CompletedTask;
+        Console.WriteLine($"Added {product.Name} to cart");
+    }
+
+    public class Product
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public decimal Price { get; set; }
+        public int StockQuantity { get; set; }
+    }
+}

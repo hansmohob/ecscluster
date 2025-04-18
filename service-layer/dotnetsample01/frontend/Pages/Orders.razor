@@ -1,0 +1,83 @@
+﻿@page "/orders"
+@inject HttpClient Http
+@using System.Net.Http.Json
+
+<PageTitle>Orders</PageTitle>
+
+<h1>Orders</h1>
+
+@if (orders == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="container">
+        @foreach (var order in orders)
+        {
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Order #@order.Id</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col">
+                            <p class="mb-1"><strong>Status:</strong> <span class="badge bg-@GetStatusColor(order.Status)">@order.Status</span></p>
+                            <p class="mb-1"><strong>Total Amount:</strong> $@order.TotalAmount.ToString("F2")</p>
+                            <p class="mb-1"><strong>Date:</strong> @order.CreatedAt.ToLocalTime().ToString("g")</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private Order[]? orders;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            orders = await Http.GetFromJsonAsync<Order[]>("api/order");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading orders: {ex.Message}");
+            orders = new[]
+            {
+                new Order
+                {
+                    Id = 1,
+                    Status = "Pending",
+                    TotalAmount = 89.97m,
+                    CreatedAt = DateTime.UtcNow.AddDays(-1)
+                },
+                new Order
+                {
+                    Id = 2,
+                    Status = "Completed",
+                    TotalAmount = 159.98m,
+                    CreatedAt = DateTime.UtcNow.AddDays(-3)
+                }
+            };
+        }
+    }
+
+    private string GetStatusColor(string status) => status.ToLower() switch
+    {
+        "pending" => "warning",
+        "completed" => "success",
+        "cancelled" => "danger",
+        _ => "secondary"
+    };
+
+    public class Order
+    {
+        public int Id { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public decimal TotalAmount { get; set; }
+        public DateTime CreatedAt { get; set; }
+    }
+}

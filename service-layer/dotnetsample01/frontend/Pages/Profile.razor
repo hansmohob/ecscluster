@@ -1,0 +1,100 @@
+@page "/profile"
+@inject HttpClient Http
+@using System.Net.Http.Json
+
+<PageTitle>Profile</PageTitle>
+
+<h1>Profile</h1>
+
+@if (user == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-body">
+                    <form @onsubmit="SaveProfile">
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" @bind="user.Username" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" @bind="user.Email" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="firstName" class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="firstName" @bind="user.FirstName" />
+                        </div>
+                        <div class="mb-3">
+                            <label for="lastName" class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="lastName" @bind="user.LastName" />
+                        </div>
+                        <button type="submit" class="btn btn-primary">Save Changes</button>
+                        @if (!string.IsNullOrEmpty(message))
+                        {
+                            <div class="alert alert-@messageType mt-3" role="alert">
+                                @message
+                            </div>
+                        }
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private User? user;
+    private string message = string.Empty;
+    private string messageType = "info";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            user = await Http.GetFromJsonAsync<User>("api/user/1");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading profile: {ex.Message}");
+            user = new User
+            {
+                Id = 1,
+                Username = "john.doe",
+                Email = "john@example.com",
+                FirstName = "John",
+                LastName = "Doe"
+            };
+        }
+    }
+
+    private async Task SaveProfile()
+    {
+        try
+        {
+            // TODO: Implement actual save functionality
+            await Task.Delay(1000); // Simulate API call
+            message = "Profile updated successfully!";
+            messageType = "success";
+        }
+        catch (Exception ex)
+        {
+            message = "Error updating profile. Please try again.";
+            messageType = "danger";
+            Console.WriteLine($"Error saving profile: {ex.Message}");
+        }
+    }
+
+    public class User
+    {
+        public int Id { get; set; }
+        public string Username { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string FirstName { get; set; } = string.Empty;
+        public string LastName { get; set; } = string.Empty;
+    }
+}
