@@ -42,5 +42,5 @@ phases:
   post_build:
     commands:
       # Store image tag in SSM Parameter Store
-      - aws ssm put-parameter --name "/${prefix_code}/image-tag" --value "$IMAGE_TAG" --type String --overwrite
+      - aws ssm put-parameter --name "/${prefix_code}/ecr/image-tag" --value "$IMAGE_TAG" --type String --overwrite
       - echo "Image tag $IMAGE_TAG stored in SSM Parameter Store"

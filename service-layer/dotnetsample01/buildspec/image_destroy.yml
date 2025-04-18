@@ -1,0 +1,7 @@
+version: 0.2
+phases:
+  build:
+    commands:
+      # Delete the image tag parameter
+      - aws ssm delete-parameter --name "/${prefix_code}/ecr/image-tag"
+      - echo "Deleted image tag parameter from SSM Parameter Store"

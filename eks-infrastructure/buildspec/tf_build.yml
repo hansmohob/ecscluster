@@ -16,4 +16,6 @@ phases:
   post_build:
     commands:
       - echo "Terraform apply completed on $(date)"
+      - echo "Triggering ArgoCD pipeline"
+      - aws codepipeline start-pipeline-execution --name ${prefix_code}-pipeline-argocd-build
     exported-variables:

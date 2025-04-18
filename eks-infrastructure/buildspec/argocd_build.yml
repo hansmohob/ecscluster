@@ -1,0 +1,76 @@
+version: 0.2
+phases:
+  install:
+    commands:
+      # Install kubectl
+      - curl -O https://s3.us-west-2.amazonaws.com/amazon-eks/1.32.0/2024-12-20/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
+      
+      # Install helm (optional, but useful)
+      - curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+      - chmod 700 get_helm.sh
+      - ./get_helm.sh
+
+  pre_build:
+    commands:
+      # Configure kubectl
+      - aws eks update-kubeconfig --name ${prefix_code}-eks-cluster -- --region ${region}
+      
+      # Test cluster connection
+      - kubectl get nodes
+
+  build:
+    commands:
+      # Create namespace
+      - kubectl create namespace argocd
+
+      # Install git-remote-s3
+      - dnf install -y python3 py python3-pip
+      - pip3 install boto3==1.37.18
+      - pip3 install git-remote-s3
+
+      # Install ArgoCD
+      - kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      
+      # Wait for ArgoCD to be ready
+      - kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+      
+      # Create service namespaces
+      - kubectl create namespace frontend
+      - kubectl create namespace orderservice
+      - kubectl create namespace productapi
+      - kubectl create namespace userservice
+
+      # Create ArgoCD Application CRDs
+      - |
+        cat << EOF | kubectl apply -f -
+        apiVersion: argoproj.io/v1alpha1
+        kind: Application
+        metadata:
+          name: dotnet-services
+          namespace: argocd
+        spec:
+          project: default
+          source:
+            repoURL: s3+zip://${bucket}/my-workspace
+            targetRevision: HEAD
+            path: service-layer/k8s
+          destination:
+            server: https://kubernetes.default.svc
+  
+            namespace: default
+          syncPolicy:
+            automated:
+              prune: true
+              selfHeal: true
+        EOF
+
+  post_build:
+    commands:
+            
+      # Get ArgoCD URL
+      - echo "ArgoCD URL is $(kubectl get svc argocd-server -n argocd -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')"
+
+      # Get ArgoCD admin password
+      - echo "ArgoCD Admin Password is $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)"
