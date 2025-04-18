@@ -45,7 +45,7 @@ module "argocd_deploy_pipeline" {
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
-  name                = "argocd_deploy"
+  name                = "argocd"
 
   buildspec_build = templatefile("../../eks-infrastructure/buildspec/argocd_build.yml", {
     prefix_code = var.prefix_code
@@ -76,7 +76,7 @@ module "service-layer_pipeline" {
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
-  name                = "service-layer"
+  name                = "docker"
   privileged_mode     = "true"
 
 
