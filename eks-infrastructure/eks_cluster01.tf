@@ -155,14 +155,10 @@ resource "aws_eks_cluster" "main" {
 resource "aws_eks_addon" "container_insights" {
   cluster_name = aws_eks_cluster.main.name
   addon_name   = "amazon-cloudwatch-observability"
-  
-  configuration_values = templatefile("${path.root}/config/addons/container_insights.json", {
-    region = var.region
-    cluster_name = aws_eks_cluster.main.name
-  })
+  addon_version = "v3.6.0-eksbuild.2"
   
   resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
+  resolve_conflicts_on_update = "PRESERVE"
 }
 
 # TODO: Need log retention
