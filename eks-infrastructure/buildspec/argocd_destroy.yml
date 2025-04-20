@@ -1,6 +1,40 @@
 version: 0.2
 phases:
+  install:
+    commands:
+      # Install kubectl
+      - curl -O https://s3.us-west-2.amazonaws.comcom/amazon-eks/1.32.0/2024-12-20/bin/linux/amd64/kubectl
+      - chmod +x kubectl
+      - mkdir -p $HOME/bin && cp ./kubectl $HOME/bin/kubectl && export PATH=$HOME/bin:$PATH
+
+  pre_build:
+    commands:
+      # Configure kubectl
+      - aws eks update-kubeconfig --name ${prefix_code}-eks-cluster --region ${region}
+      
+      # Test cluster connection
+      - kubectl get nodes
+
   build:
     commands:
-      # Finish this
-      - ls
+      # Delete ArgoCD Application first (this will clean up managedged resources)
+      - kubectl delete application dotnet-services -n argocd --ignore-not-found=true
+      
+      # Wait for application deletion to complete
+      - sleep 30
+
+      # Delete service namespaces
+      - |
+        for ns in frontend orderservice productapi userservice; do
+          kubectl delete namespace $ns --ignore-not-found=true
+        done
+
+      # Delete ArgoCD installation
+      - kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml --ignore-not-found=true
+      
+      # Finally delete argocd namespace
+      - kubectl delete namespace argocd --ignore-not-found=true
+
+  post_build:
+    commands:
+      - echo "ArgoCD and associated resources have been deleted"
