@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: frontend
   namespace: frontend
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
 spec:
   type: LoadBalancer
   ports:

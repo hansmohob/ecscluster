@@ -28,3 +28,10 @@ spec:
         env:
         - name: ASPNETCORE_URLS
           value: "http://+:80"
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: DoNotSchedule
+        labelSelector:
+          matchLabels:
+            app: userservice
