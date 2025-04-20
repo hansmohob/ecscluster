@@ -63,3 +63,8 @@ variable "privileged_mode" {
   description = "Enable privileged mode for Docker builds"
   default     = false
 }
+variable "enable_auto_trigger" {
+  description = "Enable automatic pipeline triggering on S3 updates"
+  type        = bool
+  default     = true
+}

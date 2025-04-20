@@ -14,6 +14,7 @@ module "eks-infrastructure_pipeline" {
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
+  enable_auto_trigger = true
   name                = "eks-infrastructure"
 
   buildspec_build = templatefile("../../eks-infrastructure/buildspec/tf_build.yml", {
@@ -46,6 +47,7 @@ module "argocd_deploy_pipeline" {
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
+  enable_auto_trigger = false
   name                = "argocd"
 
   buildspec_build = templatefile("../../eks-infrastructure/buildspec/argocd_build.yml", {
@@ -76,8 +78,8 @@ module "service-layer_pipeline" {
   source_key          = "my-workspace/refs/heads/main/repo.zip"
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
-  name                = "docker"
   privileged_mode     = "true"
+  name                = "docker"
 
 
   buildspec_build = templatefile("../../service-layer/dotnetsample01/buildspec/image_build.yml", {

@@ -259,8 +259,9 @@ resource "aws_cloudwatch_log_group" "eventbridge" {
 }
 
 resource "aws_cloudwatch_event_rule" "pipeline_trigger" {
-  name = "${local.pipeline_name}-trigger"
+  count = var.enable_auto_trigger ? 1 : 0
 
+  name = "${local.pipeline_name}-trigger"
   event_pattern = jsonencode({
     source      = ["aws.s3"]
     detail-type = ["Object Created"]
@@ -281,6 +282,8 @@ resource "aws_cloudwatch_event_rule" "pipeline_trigger" {
 }
 
 resource "aws_cloudwatch_event_target" "pipeline_trigger" {
+  count = var.enable_auto_trigger ? 1 : 0
+  
   rule      = aws_cloudwatch_event_rule.pipeline_trigger.name
   target_id = "CodePipelineTarget"
   arn       = aws_codepipeline.build.arn

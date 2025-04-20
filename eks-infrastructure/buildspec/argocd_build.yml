@@ -40,7 +40,7 @@ phases:
       
       # Create service namespaces if they don't exist
       - |
-        for ns in frontend orderservice productapi userservice; do
+        for ns in frontend orderservice productapi userservice observability; do
           kubectl get namespace $ns || kubectl create namespace $ns
         done
 
