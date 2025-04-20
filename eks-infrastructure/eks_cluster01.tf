@@ -155,6 +155,20 @@ resource "aws_eks_cluster" "main" {
   }
 }
 
+# TODO: Need log retention
+# resource "aws_cloudwatch_log_group" "container_insights_application" {
+#  name              = "/aws/containerinsights/${var.prefix_code}-eks-cluster/application"
+#  retention_in_days = 30
+#  kms_key_id        = aws_kms_key.eks.arn
+#}
+#
+#resource "aws_cloudwatch_log_group" "container_insights_performance" {
+#  name              = "/aws/containerinsights/${var.prefix_code}-eks-cluster/performance"
+#  retention_in_days = 30
+#  kms_key_id        = aws_kms_key.eks.arn
+#}
+
+
 # Grants EKS cluster admin access to the developer IAM role using IAM authentication
 resource "aws_eks_access_entry" "developer" {
   cluster_name      = aws_eks_cluster.main.name

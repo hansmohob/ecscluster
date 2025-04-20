@@ -57,7 +57,7 @@ phases:
           source:
             repoURL: s3+zip://${bucket}/my-workspace
             targetRevision: HEAD
-            path: service-layer/k8s
+            path: dotnetsample01/k8s
           destination:
             server: https://kubernetes.default.svc
             namespace: default
