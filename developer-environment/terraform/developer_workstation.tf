@@ -657,9 +657,10 @@ resource "aws_cloudfront_distribution" "code_server" {
 
 # CloudFront Secret Header
 resource "aws_secretsmanager_secret" "cloudfront_header" {
-  name        = "${var.prefix_code}-secret-cloudfrontheader"
-  description = "Origin verification header for code-server CloudFront distribution"
-  kms_key_id  = aws_kms_key.main.arn
+  name                    = "${var.prefix_code}-secret-cloudfrontheader"
+  description             = "Origin verification header for code-server CloudFront distribution"
+  kms_key_id              = aws_kms_key.main.arn
+  recovery_window_in_days = 0 # WARNING: Zero recovery window - not suitable for production use
 
   tags = {
     Name         = "${var.prefix_code}-secret-cloudfrontheader"
@@ -716,9 +717,10 @@ resource "aws_security_group_rule" "code_server_egress" {
 }
 
 resource "aws_secretsmanager_secret" "code_server" {
-  name        = "${var.prefix_code}-secret-codeserver"
-  description = "Initial code-server password. If rotation enabled, refer to the rotating secret after 30 days."
-  kms_key_id  = aws_kms_key.main.arn
+  name                    = "${var.prefix_code}-secret-codeserver"
+  description             = "Initial code-server password. If rotation enabled, refer to the rotating secret after 30 days."
+  kms_key_id              = aws_kms_key.main.arn
+  recovery_window_in_days = 0 # WARNING: Zero recovery window - not suitable for production use
 
   tags = {
     Name         = "${var.prefix_code}-secret-codeserver"

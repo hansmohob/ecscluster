@@ -1,9 +1,10 @@
 ### Lambda-based rotation of code-server password
 resource "aws_secretsmanager_secret" "rotating" {
-  count       = var.rotate_secret ? 1 : 0
-  name        = "${var.prefix_code}-secret-rotating-codeserver"
-  description = "Rotating code-server password that updates automatically every 30 days"
-  kms_key_id  = aws_kms_key.main.arn
+  count                   = var.rotate_secret ? 1 : 0
+  name                    = "${var.prefix_code}-secret-rotating-codeserver"
+  description             = "Rotating code-server password that updates automatically every 30 days"
+  kms_key_id              = aws_kms_key.main.arn
+  recovery_window_in_days = 0 # WARNING: Zero recovery window - not suitable for production use
 
   tags = {
     Name         = "${var.prefix_code}-secret-rotating-codeserver"
