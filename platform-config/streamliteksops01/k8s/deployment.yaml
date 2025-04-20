@@ -16,7 +16,7 @@ spec:
       serviceAccountName: observability-sa
       containers:
       - name: streamlit
-        image: PLACEHOLDER_OBSERVABILITYUI_IMAGE
+        image: PLACEHOLDER_OBSERVABILITY_IMAGE
         ports:
         - containerPort: 8501
         resources:
@@ -26,6 +26,13 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "500m"
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: observability-data
       topologySpreadConstraints:
       - maxSkew: 1
         topologyKey: kubernetes.io/hostname
@@ -33,3 +40,16 @@ spec:
         labelSelector:
           matchLabels:
             app: observability-ui
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: observability-data
+  namespace: observability
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: gp3
+  resources:
+    requests:
+      storage: 10Gi

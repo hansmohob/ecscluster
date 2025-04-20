@@ -57,7 +57,7 @@ resource "aws_iam_role_policy" "observability" {
       {
         Effect = "Allow"
         Action = [
-          "bedrock:InvokeModel"
+          "bedrock:*"
         ]
         Resource = ["*"]
       },
