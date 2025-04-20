@@ -352,3 +352,67 @@ resource "aws_route_table_association" "private_03" {
   subnet_id      = aws_subnet.private_subnet_03.id
   route_table_id = aws_route_table.private_03.id
 }
+
+### VPC Peering to Developer Environment allowing access to EKS cluster
+
+# Get the CodeBuild VPC
+data "aws_vpc" "codebuild" {
+  tags = {
+    Name = "${var.prefix_code}-vpc01"
+  }
+}
+
+# Get the CodeBuild route table
+data "aws_route_table" "codebuild" {
+  tags = {
+    Name = "${var.prefix_code}-routetable-private1"
+  }
+}
+
+# Create VPC peering
+resource "aws_vpc_peering_connection" "codebuild_eks" {
+  vpc_id      = aws_vpc.eks.id
+  peer_vpc_id = data.aws_vpc.codebuild.id
+  auto_accept = true
+
+  tags = {
+    Name = "${var.prefix_code}-vpc-peering"
+  }
+}
+
+# Add routes from EKS private subnets to CodeBuild VPC
+resource "aws_route" "eks_to_codebuild_1" {
+  route_table_id            = aws_route_table.private_01.id
+  destination_cidr_block    = data.aws_vpc.codebuild.cidr_block
+  vpc_peering_connection_id = aws_vpc_peering_connection.codebuild_eks.id
+}
+
+resource "aws_route" "eks_to_codebuild_2" {
+  route_table_id            = aws_route_table.private_02.id
+  destination_cidr_block    = data.aws_vpc.codebuild.cidr_block
+  vpc_peering_connection_id = aws_vpc_peering_connection.codebuild_eks.id
+}
+
+resource "aws_route" "eks_to_codebuild_3" {
+  route_table_id            = aws_route_table.private_03.id
+  destination_cidr_block    = data.aws_vpc.codebuild.cidr_block
+  vpc_peering_connection_id = aws_vpc_peering_connection.codebuild_eks.id
+}
+
+# Add route from CodeBuild to EKS
+resource "aws_route" "codebuild_to_eks" {
+  route_table_id            = data.aws_route_table.codebuild.id
+  destination_cidr_block    = aws_vpc.eks.cidr_block
+  vpc_peering_connection_id = aws_vpc_peering_connection.codebuild_eks.id
+}
+
+# Allow all traffic from Developer Environment to EKS Cluster
+resource "aws_security_group_rule" "eks_api_ingress_from_dev_vpc" {
+  type              = "ingress"
+  from_port         = 0
+  to_port           = 0
+  protocol          = "-1"
+  security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  cidr_blocks       = ["10.180.0.0/16"]  # Dev VPC CIDR TODO: replace with variable
+  description       = "Allow all traffic from developer VPC"
+}

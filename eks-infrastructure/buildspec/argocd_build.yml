@@ -22,27 +22,29 @@ phases:
 
   build:
     commands:
-      # Create namespace
-      - kubectl create namespace argocd
-
       # Install git-remote-s3
-      - dnf install -y python3 py python3-pip
+      - dnf install -y python3 python3-pip
       - pip3 install boto3==1.37.18
       - pip3 install git-remote-s3
 
-      # Install ArgoCD
-      - kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-      
-      # Wait for ArgoCD to be ready
-      - kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
-      
-      # Create service namespaces
-      - kubectl create namespace frontend
-      - kubectl create namespace orderservice
-      - kubectl create namespace productapi
-      - kubectl create namespace userservice
+      # Create argocd namespace if it doesn't exist
+      - kubectl get namespace argocd || kubectl create namespace argocd
 
-      # Create ArgoCD Application CRDs
+      # Install ArgoCD only if not already installed
+      - |
+        if ! kubectl get deployment argocd-server -n argocd > /dev/null 2>&1; then
+          kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+          # Wait for ArgoCD to be ready
+          kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+        fi
+      
+      # Create service namespaces if they don't exist
+      - |
+        for ns in frontend orderservice productapi userservice; do
+          kubectl get namespace $ns || kubectl create namespace $ns
+        done
+
+      # Create/Update ArgoCD Application CRD
       - |
         cat << EOF | kubectl apply -f -
         apiVersion: argoproj.io/v1alpha1
@@ -58,7 +60,6 @@ phases:
             path: service-layer/k8s
           destination:
             server: https://kubernetes.default.svc
-  
             namespace: default
           syncPolicy:
             automated:

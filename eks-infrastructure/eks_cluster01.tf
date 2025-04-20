@@ -86,6 +86,12 @@ resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryPullOn
   role       = aws_iam_role.node.name
 }
 
+resource "aws_iam_role_policy_attachment" "node_CloudWatchAgentServerPolicy" {
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+  role       = aws_iam_role.node.name
+}
+
+# Deploy cluster
 resource "aws_eks_cluster" "main" {
   name = "${var.prefix_code}-eks-cluster"
 
@@ -131,6 +137,10 @@ resource "aws_eks_cluster" "main" {
     ]
   }
 
+  logging_config {
+    enable_container_insights = true
+  }
+
   depends_on = [
     aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy,
     aws_iam_role_policy_attachment.cluster_AmazonEKSComputePolicy,
@@ -142,6 +152,24 @@ resource "aws_eks_cluster" "main" {
   tags = {
     Name         = "${var.prefix_code}-eks-cluster"
     resourcetype = "compute"
+  }
+}
+
+# Grants EKS cluster admin access to the developer IAM role using IAM authentication
+resource "aws_eks_access_entry" "developer" {
+  cluster_name      = aws_eks_cluster.main.name
+  principal_arn     = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.prefix_code}-iamrole-developer"
+  type              = "STANDARD"
+  kubernetes_groups = ["masters"]
+}
+
+resource "aws_eks_access_policy_association" "developer_admin" {
+  cluster_name  = aws_eks_cluster.main.name
+  policy_arn    = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+  principal_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.prefix_code}-iamrole-developer"
+
+  access_scope {
+    type = "cluster"
   }
 }
 
