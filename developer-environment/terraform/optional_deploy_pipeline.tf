@@ -57,7 +57,6 @@ module "argocd_deploy_pipeline" {
   buildspec_destroy = templatefile("../../eks-infrastructure/buildspec/argocd_destroy.yml", {
     prefix_code = var.prefix_code
     region      = var.region
-    bucket      = module.git_repo_eks-infrastructure.bucket_name
   })
 }
 
