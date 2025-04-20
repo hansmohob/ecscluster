@@ -156,7 +156,7 @@ resource "aws_eks_addon" "container_insights" {
   cluster_name = aws_eks_cluster.main.name
   addon_name   = "amazon-cloudwatch-observability"
   
-  configuration_values = templatefile("${path.module}/config/addons/container-insights.json", {
+  configuration_values = templatefile("/config/addons/container-insights.json", {
     region = var.region
     cluster_name = aws_eks_cluster.main.name
   })
