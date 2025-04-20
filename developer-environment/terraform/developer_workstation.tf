@@ -1038,7 +1038,7 @@ resource "aws_instance" "code_server" {
     delete_on_termination = true
   }
 
-  user_data = base64encode(templatefile("${path.module}/instance_user_data.sh", {
+  user_data = base64encode(templatefile("${path.root}/instance_user_data.sh", {
     prefix                           = var.prefix_code
     region                           = var.region
     code_server_version              = var.code_server_version
