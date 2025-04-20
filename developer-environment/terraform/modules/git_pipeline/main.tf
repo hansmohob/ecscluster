@@ -284,7 +284,7 @@ resource "aws_cloudwatch_event_rule" "pipeline_trigger" {
 resource "aws_cloudwatch_event_target" "pipeline_trigger" {
   count = var.enable_auto_trigger ? 1 : 0
   
-  rule      = aws_cloudwatch_event_rule.pipeline_trigger.name
+  rule      = aws_cloudwatch_event_rule.pipeline_trigger[0].name
   target_id = "CodePipelineTarget"
   arn       = aws_codepipeline.build.arn
   role_arn  = aws_iam_role.eventbridge.arn

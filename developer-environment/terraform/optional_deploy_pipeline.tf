@@ -79,6 +79,7 @@ module "service-layer_pipeline" {
   developer_role_name = aws_iam_role.developer.name
   developer_role_arn  = aws_iam_role.developer.arn
   privileged_mode     = "true"
+  enable_auto_trigger = false
   name                = "docker"
 
 
