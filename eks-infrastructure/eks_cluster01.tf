@@ -137,10 +137,6 @@ resource "aws_eks_cluster" "main" {
     ]
   }
 
-  logging_config {
-    enable_container_insights = true
-  }
-
   depends_on = [
     aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy,
     aws_iam_role_policy_attachment.cluster_AmazonEKSComputePolicy,
@@ -153,6 +149,20 @@ resource "aws_eks_cluster" "main" {
     Name         = "${var.prefix_code}-eks-cluster"
     resourcetype = "compute"
   }
+}
+
+# Deploy CloudWatch Observability EKS add-on
+resource "aws_eks_addon" "container_insights" {
+  cluster_name = aws_eks_cluster.main.name
+  addon_name   = "amazon-cloudwatch-observability"
+  
+  configuration_values = templatefile("${path.module}/config/addons/container-insights.json", {
+    region = var.region
+    cluster_name = aws_eks_cluster.main.name
+  })
+  
+  resolve_conflicts_on_create = "OVERWRITE"
+  resolve_conflicts_on_update = "OVERWRITE"
 }
 
 # TODO: Need log retention
