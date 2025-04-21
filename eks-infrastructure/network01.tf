@@ -7,8 +7,8 @@ resource "aws_vpc" "eks" {
   instance_tenancy     = "default"
 
   tags = {
-    Name         = "${var.prefix_code}-eks-vpc"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-vpc"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
   }
 }
@@ -95,10 +95,10 @@ resource "aws_subnet" "public_subnet_01" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-public1-${var.az01}"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-subnet-public1-${var.az01}"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
-    "kubernetes.io/role/elb" = "1"
+    "kubernetes.io/role/elb"                               = "1"
   }
 }
 
@@ -109,10 +109,10 @@ resource "aws_subnet" "public_subnet_02" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-public2-${var.az02}"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-subnet-public2-${var.az02}"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
-    "kubernetes.io/role/elb" = "1"
+    "kubernetes.io/role/elb"                               = "1"
   }
 }
 
@@ -123,10 +123,10 @@ resource "aws_subnet" "public_subnet_03" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-public3-${var.az03}"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-subnet-public3-${var.az03}"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
-    "kubernetes.io/role/elb" = "1"
+    "kubernetes.io/role/elb"                               = "1"
   }
 }
 
@@ -137,10 +137,10 @@ resource "aws_subnet" "private_subnet_01" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-private1-${var.az01}"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-subnet-private1-${var.az01}"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
-    "kubernetes.io/role/internal-elb" = "1"
+    "kubernetes.io/role/internal-elb"                      = "1"
   }
 }
 
@@ -151,10 +151,10 @@ resource "aws_subnet" "private_subnet_02" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-private2-${var.az02}"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-subnet-private2-${var.az02}"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
-    "kubernetes.io/role/internal-elb" = "1"
+    "kubernetes.io/role/internal-elb"                      = "1"
   }
 }
 
@@ -165,10 +165,10 @@ resource "aws_subnet" "private_subnet_03" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name         = "${var.prefix_code}-eks-subnet-private3-${var.az03}"
-    resourcetype = "network"
+    Name                                                   = "${var.prefix_code}-eks-subnet-private3-${var.az03}"
+    resourcetype                                           = "network"
     "kubernetes.io/cluster/${var.prefix_code}-eks-cluster" = "shared"
-    "kubernetes.io/role/internal-elb" = "1"
+    "kubernetes.io/role/internal-elb"                      = "1"
   }
 }
 
@@ -413,6 +413,6 @@ resource "aws_security_group_rule" "eks_api_ingress_from_dev_vpc" {
   to_port           = 0
   protocol          = "-1"
   security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
-  cidr_blocks       = ["10.180.0.0/16"]  # Dev VPC CIDR TODO: replace with variable
+  cidr_blocks       = ["10.180.0.0/16"] # Dev VPC CIDR TODO: replace with variable
   description       = "Allow all traffic from developer VPC"
 }

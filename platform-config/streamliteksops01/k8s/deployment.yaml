@@ -1,3 +1,11 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: observability-sa
+  namespace: observability
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::PLACEHOLDER_AWS_ACCOUNT_ID:role/msn-observability-role
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -16,7 +24,7 @@ spec:
       serviceAccountName: observability-sa
       containers:
       - name: streamlit
-        image: PLACEHOLDER_OBSERVABILITY_IMAGE
+        image: 853311617213.dkr.ecr.us-east-1.amazonaws.com/msn-ecr-observability:20250420192024
         ports:
         - containerPort: 8501
         resources:
