@@ -1,0 +1,15 @@
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: general-purpose
+spec:
+  role: msn-eks-node-role  # Verified from IAM role list
+  subnetSelectorTerms:
+    - id: subnet-0a0d53c61cf95c82e  # private1-us-east-1a
+    - id: subnet-05d9c2152e3ff9e9b  # private2-us-east-1b
+    - id: subnet-051de6099c7911f4a  # private3-us-east-1c
+  securityGroupSelectorTerms:
+    - id: sg-02b5cb9741a625869  # Verified from cluster security group
+
+### kubectl apply -f nodeclass-general-purpose.yaml
+### kubectl drain i-0749129e8e265379b --ignore-daemonsets --delete-emptydir-data --force
